@@ -1,0 +1,46 @@
+"use server";
+
+import { z } from "zod";
+import { redirect } from "next/navigation";
+import { prisma } from "@tally/db";
+import { createSessionForUser, verifyPassword } from "@/lib/auth";
+
+export type LoginState = {
+  error?: string;
+};
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1)
+});
+
+export const loginAction = async (
+  _prevState: LoginState,
+  formData: FormData
+): Promise<LoginState> => {
+  const parsed = loginSchema.safeParse({
+    email: formData.get("email"),
+    password: formData.get("password")
+  });
+
+  if (!parsed.success) {
+    return { error: "Enter a valid email and password." };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { email: parsed.data.email }
+  });
+
+  if (!user || user.status !== "ACTIVE") {
+    return { error: "Invalid credentials." };
+  }
+
+  const isValid = await verifyPassword(parsed.data.password, user.passwordHash);
+
+  if (!isValid) {
+    return { error: "Invalid credentials." };
+  }
+
+  await createSessionForUser(user);
+  redirect("/dashboard");
+};

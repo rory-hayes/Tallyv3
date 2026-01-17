@@ -1,0 +1,22 @@
+{
+  "name": "@tally/db",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "generate": "node ./scripts/prisma-with-root-env.cjs generate",
+    "migrate": "node ./scripts/prisma-with-root-env.cjs migrate deploy",
+    "postinstall": "node ./scripts/prisma-with-root-env.cjs generate",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.16.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.9",
+    "prisma": "^5.16.1",
+    "vitest": "^1.6.0"
+  }
+}
