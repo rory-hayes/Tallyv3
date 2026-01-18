@@ -5,7 +5,7 @@
   "scripts": {
     "predev": "pnpm --filter @tally/db generate",
     "dev": "next dev",
-    "prebuild": "pnpm --filter @tally/db generate",
+    "prebuild": "pnpm --filter @tally/db generate && node scripts/copy-prisma-engine.js",
     "build": "next build",
     "postbuild": "node scripts/copy-prisma-engine.js",
     "start": "next start",

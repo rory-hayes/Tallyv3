@@ -1,5 +1,6 @@
-// CRITICAL: Set up Prisma engine path BEFORE importing PrismaClient
-// This must run at module load time, before PrismaClient is instantiated
+// This file must be imported BEFORE any Prisma Client imports
+// It sets up the Prisma engine path for Vercel/serverless environments
+
 if (process.env.NODE_ENV === "production" && !process.env.PRISMA_QUERY_ENGINE_LIBRARY) {
   const path = require("path");
   const fs = require("fs");
@@ -39,18 +40,4 @@ if (process.env.NODE_ENV === "production" && !process.env.PRISMA_QUERY_ENGINE_LI
     console.warn("[Prisma Setup] Could not find Prisma engine in any expected location");
     console.warn("[Prisma Setup] Searched paths:", possiblePaths);
   }
-}
-
-import { PrismaClient } from "@prisma/client";
-
-const globalForPrisma = global as unknown as { prisma?: PrismaClient };
-
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: []
-  });
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
 }

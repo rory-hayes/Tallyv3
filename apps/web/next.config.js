@@ -23,7 +23,9 @@ const nextConfig = {
   outputFileTracingIncludes: {
     "/**/*": [
       `${prismaClientRelative}/**`,
-      `${prismaPkgRelative}/**`
+      `${prismaPkgRelative}/**`,
+      // Include Prisma engine from .prisma-engines (copied in prebuild)
+      "apps/web/.prisma-engines/libquery_engine-*.so.node"
     ]
   }
 };
