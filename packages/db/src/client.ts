@@ -6,25 +6,41 @@ if (process.env.NODE_ENV === "production" && !process.env.PRISMA_QUERY_ENGINE_LI
     const fs = require("fs");
 
     // Try to resolve @prisma/client to find the node_modules location
-    let prismaClientPath = null;
+    // Note: require.resolve may return a webpack module ID (number) after bundling,
+    // so we need to validate it's actually a string path
+    let prismaClientPath: string | null = null;
     try {
-      prismaClientPath = require.resolve("@prisma/client/package.json");
+      const resolved = require.resolve("@prisma/client/package.json");
+      // Validate it's actually a string path, not a webpack module ID (number)
+      // After webpack bundling, require.resolve can return a number module ID
+      if (typeof resolved === "string" && (resolved.includes("@prisma") || resolved.includes("node_modules") || resolved.includes("/") || resolved.includes("\\"))) {
+        prismaClientPath = resolved;
+      }
     } catch (e) {
       // Continue with other paths
     }
 
     // Build list of possible paths, checking node_modules FIRST (most reliable on Vercel)
-    const possiblePaths = [];
+    const possiblePaths: string[] = [];
 
     // 1. node_modules/.prisma/client location (Prisma checks this first, Vercel includes it)
-    if (prismaClientPath) {
-      const prismaClientDir = path.dirname(prismaClientPath);
-      const nodeModulesPrisma = path.join(prismaClientDir, ".prisma", "client", "libquery_engine-rhel-openssl-3.0.x.so.node");
-      possiblePaths.push(nodeModulesPrisma);
-      
-      // Also check parent .prisma/client
-      const parentPrisma = path.join(path.dirname(prismaClientDir), ".prisma", "client", "libquery_engine-rhel-openssl-3.0.x.so.node");
-      possiblePaths.push(parentPrisma);
+    if (prismaClientPath && typeof prismaClientPath === "string") {
+      try {
+        const prismaClientDir = path.dirname(prismaClientPath);
+        if (typeof prismaClientDir === "string") {
+          const nodeModulesPrisma = path.join(prismaClientDir, ".prisma", "client", "libquery_engine-rhel-openssl-3.0.x.so.node");
+          possiblePaths.push(nodeModulesPrisma);
+          
+          // Also check parent .prisma/client
+          const parentDir = path.dirname(prismaClientDir);
+          if (typeof parentDir === "string") {
+            const parentPrisma = path.join(parentDir, ".prisma", "client", "libquery_engine-rhel-openssl-3.0.x.so.node");
+            possiblePaths.push(parentPrisma);
+          }
+        }
+      } catch (e) {
+        // Skip if path operations fail
+      }
     }
 
     // 2. Vercel's /var/task node_modules paths (absolute)
