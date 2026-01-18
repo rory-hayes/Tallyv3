@@ -37,16 +37,24 @@ function findEngine(startDir) {
   return preferred || candidates[0];
 }
 
+function findPnpmPrismaClientDir(rootDir) {
+  const pnpmDir = path.join(rootDir, "node_modules", ".pnpm");
+  if (!fs.existsSync(pnpmDir)) {
+    return null;
+  }
+  const entries = fs.readdirSync(pnpmDir);
+  for (const entry of entries) {
+    if (!entry.startsWith("@prisma+client@")) continue;
+    const prismaDir = path.join(pnpmDir, entry, "node_modules", ".prisma", "client");
+    if (fs.existsSync(prismaDir)) {
+      return prismaDir;
+    }
+  }
+  return null;
+}
+
 const webDir = process.cwd();
 const rootDir = path.resolve(webDir, "..", "..");
-
-// Try to resolve @prisma/client package location
-let prismaClientPath = null;
-try {
-  prismaClientPath = require.resolve("@prisma/client/package.json");
-} catch (e) {
-  // Will try other methods
-}
 
 // Build list of potential locations to search
 const searchPaths = [];
@@ -57,27 +65,10 @@ searchPaths.push(path.join(webDir, "node_modules", ".prisma", "client"));
 // 2. Root node_modules/.prisma/client
 searchPaths.push(path.join(rootDir, "node_modules", ".prisma", "client"));
 
-// 3. If we found @prisma/client, check its .prisma/client
-if (prismaClientPath) {
-  const prismaClientDir = path.dirname(prismaClientPath);
-  searchPaths.push(path.join(prismaClientDir, ".prisma", "client"));
-  // Also check parent directory
-  searchPaths.push(path.join(path.dirname(prismaClientDir), ".prisma", "client"));
-}
-
-// 4. pnpm store locations (for Vercel)
+// 3. pnpm store locations (for Vercel)
 searchPaths.push(path.join(rootDir, "node_modules", ".pnpm"));
-if (prismaClientPath) {
-  // Look for pnpm structure like .pnpm/@prisma+client@...
-  const prismaClientDir = path.dirname(prismaClientPath);
-  searchPaths.push(prismaClientDir);
-  const pnpmMatch = prismaClientDir.match(/(.*\/\.pnpm\/[^\/]+)/);
-  if (pnpmMatch) {
-    searchPaths.push(pnpmMatch[1]);
-  }
-}
 
-// 5. Also search in packages/db/node_modules if it exists
+// 4. Also search in packages/db/node_modules if it exists
 searchPaths.push(path.join(rootDir, "packages", "db", "node_modules", ".prisma", "client"));
 
 // Find the engine
@@ -96,46 +87,36 @@ if (!enginePath) {
   process.exit(1);
 }
 
+const engineFile = path.basename(enginePath);
+
 // Determine if we're in prebuild or postbuild
 const nextServerAppExists = fs.existsSync(path.join(webDir, ".next", "server", "app"));
 
-// Copy to multiple locations where Prisma might look
+// Copy destinations
 const destinations = [];
 
-// CRITICAL: Copy to node_modules/.prisma/client location that Prisma checks FIRST
-// This is the location Vercel includes in the bundle
-if (prismaClientPath) {
-  const prismaClientDir = path.dirname(prismaClientPath);
-  const prismaClientEngineDir = path.join(prismaClientDir, ".prisma", "client");
-  if (fs.existsSync(prismaClientEngineDir)) {
-    destinations.push(path.join(prismaClientEngineDir, path.basename(enginePath)));
-    console.log("Will copy to node_modules/.prisma/client (primary location for Vercel)");
-  }
-  
-  // Also check parent .prisma/client
-  const parentPrismaDir = path.join(path.dirname(prismaClientDir), ".prisma", "client");
-  if (fs.existsSync(parentPrismaDir)) {
-    destinations.push(path.join(parentPrismaDir, path.basename(enginePath)));
-  }
+// CRITICAL: Copy into pnpm @prisma+client .prisma/client directory
+const pnpmPrismaClientDir = findPnpmPrismaClientDir(rootDir);
+if (pnpmPrismaClientDir) {
+  destinations.push(path.join(pnpmPrismaClientDir, engineFile));
+  console.log(`Will copy to pnpm prisma client dir: ${pnpmPrismaClientDir}`);
+} else {
+  console.warn("Could not locate pnpm @prisma+client .prisma/client directory");
 }
 
 if (nextServerAppExists) {
-  // In postbuild, .next/server exists and has been built by Next.js
-  // Copy to .next/server locations as backup
   destinations.push(
-    path.join(webDir, ".next", "server", path.basename(enginePath)),
-    path.join(webDir, ".next", "server", ".prisma", "client", path.basename(enginePath))
+    path.join(webDir, ".next", "server", engineFile),
+    path.join(webDir, ".next", "server", ".prisma", "client", engineFile)
   );
   console.log("Running in postbuild mode - also copying to .next/server/");
 } else {
-  // In prebuild, copy to .prisma-engines directory
   const prebuildDir = path.join(webDir, ".prisma-engines");
   fs.mkdirSync(prebuildDir, { recursive: true });
-  destinations.push(path.join(prebuildDir, path.basename(enginePath)));
+  destinations.push(path.join(prebuildDir, engineFile));
   console.log("Running in prebuild mode - also copying to .prisma-engines/");
 }
 
-// Copy to all destinations
 for (const destPath of destinations) {
   try {
     const destDir = path.dirname(destPath);

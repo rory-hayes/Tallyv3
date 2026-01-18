@@ -5,66 +5,48 @@ if (process.env.NODE_ENV === "production" && !process.env.PRISMA_QUERY_ENGINE_LI
     const path = require("path");
     const fs = require("fs");
 
-    // Try to resolve @prisma/client to find the node_modules location
-    // Note: require.resolve may return a webpack module ID (number) after bundling,
-    // so we need to validate it's actually a string path
-    let prismaClientPath: string | null = null;
-    try {
-      const resolved = require.resolve("@prisma/client/package.json");
-      // Validate it's actually a string path, not a webpack module ID (number)
-      // After webpack bundling, require.resolve can return a number module ID
-      if (typeof resolved === "string" && (resolved.includes("@prisma") || resolved.includes("node_modules") || resolved.includes("/") || resolved.includes("\\"))) {
-        prismaClientPath = resolved;
-      }
-    } catch (e) {
-      // Continue with other paths
-    }
-
-    // Build list of possible paths, checking node_modules FIRST (most reliable on Vercel)
+    const engineFile = "libquery_engine-rhel-openssl-3.0.x.so.node";
     const possiblePaths: string[] = [];
 
-    // 1. node_modules/.prisma/client location (Prisma checks this first, Vercel includes it)
-    if (prismaClientPath && typeof prismaClientPath === "string") {
+    const addPnpmClientPaths = (baseDir: string) => {
       try {
-        const prismaClientDir = path.dirname(prismaClientPath);
-        if (typeof prismaClientDir === "string") {
-          const nodeModulesPrisma = path.join(prismaClientDir, ".prisma", "client", "libquery_engine-rhel-openssl-3.0.x.so.node");
-          possiblePaths.push(nodeModulesPrisma);
-          
-          // Also check parent .prisma/client
-          const parentDir = path.dirname(prismaClientDir);
-          if (typeof parentDir === "string") {
-            const parentPrisma = path.join(parentDir, ".prisma", "client", "libquery_engine-rhel-openssl-3.0.x.so.node");
-            possiblePaths.push(parentPrisma);
-          }
+        if (!fs.existsSync(baseDir)) return;
+        const entries = fs.readdirSync(baseDir);
+        for (const entry of entries) {
+          if (!entry.startsWith("@prisma+client@")) continue;
+          const candidate = path.join(baseDir, entry, "node_modules", ".prisma", "client", engineFile);
+          possiblePaths.push(candidate);
         }
       } catch (e) {
-        // Skip if path operations fail
+        // ignore
       }
-    }
+    };
 
-    // 2. Vercel's /var/task node_modules paths (absolute)
-    possiblePaths.push("/var/task/node_modules/.pnpm/@prisma+client@5.22.0_prisma@5.22.0/node_modules/.prisma/client/libquery_engine-rhel-openssl-3.0.x.so.node");
+    // 1. pnpm locations (most reliable on Vercel)
+    addPnpmClientPaths("/var/task/node_modules/.pnpm");
+    addPnpmClientPaths("/var/task/apps/web/node_modules/.pnpm");
+    addPnpmClientPaths(path.join(process.cwd(), "node_modules", ".pnpm"));
+    addPnpmClientPaths(path.join(process.cwd(), "..", "node_modules", ".pnpm"));
     
-    // 3. Vercel's /var/task .next/server paths (absolute)
+    // 2. Vercel's /var/task .next/server paths (absolute)
     possiblePaths.push(
-      "/var/task/apps/web/.next/server/libquery_engine-rhel-openssl-3.0.x.so.node",
-      "/var/task/apps/web/.next/server/.prisma/client/libquery_engine-rhel-openssl-3.0.x.so.node",
-      "/var/task/.next/server/libquery_engine-rhel-openssl-3.0.x.so.node",
-      "/var/task/.next/server/.prisma/client/libquery_engine-rhel-openssl-3.0.x.so.node"
+      "/var/task/apps/web/.next/server/" + engineFile,
+      "/var/task/apps/web/.next/server/.prisma/client/" + engineFile,
+      "/var/task/.next/server/" + engineFile,
+      "/var/task/.next/server/.prisma/client/" + engineFile
     );
 
-    // 4. .prisma-engines directory
+    // 3. .prisma-engines directory
     possiblePaths.push(
-      "/var/task/apps/web/.prisma-engines/libquery_engine-rhel-openssl-3.0.x.so.node",
-      "/var/task/.prisma-engines/libquery_engine-rhel-openssl-3.0.x.so.node"
+      "/var/task/apps/web/.prisma-engines/" + engineFile,
+      "/var/task/.prisma-engines/" + engineFile
     );
 
-    // 5. Relative paths from cwd
+    // 4. Relative paths from cwd
     possiblePaths.push(
-      path.join(process.cwd(), ".next", "server", "libquery_engine-rhel-openssl-3.0.x.so.node"),
-      path.join(process.cwd(), ".next", "server", ".prisma", "client", "libquery_engine-rhel-openssl-3.0.x.so.node"),
-      path.join(process.cwd(), ".prisma-engines", "libquery_engine-rhel-openssl-3.0.x.so.node")
+      path.join(process.cwd(), ".next", "server", engineFile),
+      path.join(process.cwd(), ".next", "server", ".prisma", "client", engineFile),
+      path.join(process.cwd(), ".prisma-engines", engineFile)
     );
 
     // Search for the engine
