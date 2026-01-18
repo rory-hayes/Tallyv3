@@ -28,8 +28,9 @@ export const loginAction = async (
     return { error: "Enter a valid email and password." };
   }
 
+  let user = null;
   try {
-    const user = await prisma.user.findUnique({
+    user = await prisma.user.findUnique({
       where: { email: parsed.data.email }
     });
 
@@ -42,11 +43,11 @@ export const loginAction = async (
     if (!isValid) {
       return { error: "Invalid credentials." };
     }
-
-    await createSessionForUser(user);
-    redirect("/dashboard");
   } catch (error) {
     logServerError({ scope: "login" }, error);
     return { error: "Unable to sign in right now." };
   }
+
+  await createSessionForUser(user);
+  redirect("/dashboard");
 };

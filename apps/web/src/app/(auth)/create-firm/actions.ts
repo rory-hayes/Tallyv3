@@ -56,6 +56,7 @@ export const createFirmAction = async (
     return { error: "An account with this email already exists." };
   }
 
+  let adminUser = null;
   try {
     const passwordHash = await hashPassword(parsed.data.password);
 
@@ -79,15 +80,16 @@ export const createFirmAction = async (
       }
     });
 
-    const adminUser = firm.users[0];
-    if (!adminUser) {
-      return { error: "Unable to create admin user." };
-    }
-
-    await createSessionForUser(adminUser);
-    redirect("/dashboard");
+    adminUser = firm.users[0] ?? null;
   } catch (error) {
     logServerError({ scope: "create_firm" }, error);
     return { error: "Unable to create workspace right now." };
   }
+
+  if (!adminUser) {
+    return { error: "Unable to create admin user." };
+  }
+
+  await createSessionForUser(adminUser);
+  redirect("/dashboard");
 };
