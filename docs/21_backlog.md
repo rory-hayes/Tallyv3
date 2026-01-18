@@ -64,6 +64,13 @@ Each story includes acceptance criteria. Stories are grouped by epic.
 - Stores row numbers.
 - Errors visible in UI.
 
+### S5.3 Direct-to-S3 uploads with production CORS + size handling
+**Acceptance criteria**
+- Direct browser uploads to S3 work without CORS errors.
+- Bucket CORS is configured for the production app origin.
+- Large uploads avoid serverless memory/timeouts.
+- Upload flow remains audited and firm-scoped.
+
 ---
 
 ## E6 Mapping templates

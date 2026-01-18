@@ -43,8 +43,7 @@ export const POST = async (request: Request) => {
     return errorResponse(400, "Invalid upload request.");
   }
 
-  const { payRunId, sourceType, storageKey, originalFilename, mimeType } =
-    parsed.data;
+  const { payRunId, storageKey, originalFilename, mimeType } = parsed.data;
 
   if (!isAllowedUpload(originalFilename, mimeType)) {
     return errorResponse(400, "Unsupported file type.");
