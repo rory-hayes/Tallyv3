@@ -1,9 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@tally/db", "@tally/storage"],
-  serverExternalPackages: ["@prisma/client"],
   experimental: {
-    typedRoutes: true
+    typedRoutes: true,
+    serverComponentsExternalPackages: ["@prisma/client"]
   }
 };
 
