@@ -7,6 +7,7 @@
     "dev": "next dev",
     "prebuild": "pnpm --filter @tally/db generate",
     "build": "next build",
+    "postbuild": "node scripts/copy-prisma-engine.js",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc -p tsconfig.json --noEmit",
