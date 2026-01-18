@@ -1,11 +1,14 @@
 const path = require("path");
 
-const prismaClientDir = path.join(
-  path.dirname(require.resolve("@prisma/client/package.json")),
-  "../.prisma/client"
-);
+const repoRoot = path.join(__dirname, "../..");
+const prismaClientPkg = path.dirname(require.resolve("@prisma/client/package.json"));
+const prismaClientDir = path.join(prismaClientPkg, "../.prisma/client");
 const prismaClientRelative = path
-  .relative(__dirname, prismaClientDir)
+  .relative(repoRoot, prismaClientDir)
+  .split(path.sep)
+  .join("/");
+const prismaPkgRelative = path
+  .relative(repoRoot, prismaClientPkg)
   .split(path.sep)
   .join("/");
 
@@ -16,8 +19,9 @@ const nextConfig = {
     typedRoutes: true,
     serverComponentsExternalPackages: ["@prisma/client"]
   },
+  outputFileTracingRoot: repoRoot,
   outputFileTracingIncludes: {
-    "/**/*": [`${prismaClientRelative}/**`]
+    "/**/*": [`${prismaClientRelative}/**`, `${prismaPkgRelative}/**`]
   }
 };
 
