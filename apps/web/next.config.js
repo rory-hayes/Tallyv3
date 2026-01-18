@@ -21,7 +21,10 @@ const nextConfig = {
   },
   outputFileTracingRoot: repoRoot,
   outputFileTracingIncludes: {
-    "/**/*": [`${prismaClientRelative}/**`, `${prismaPkgRelative}/**`]
+    "/**/*": [
+      `${prismaClientRelative}/**`,
+      `${prismaPkgRelative}/**`
+    ]
   }
 };
 
