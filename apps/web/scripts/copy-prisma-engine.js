@@ -95,26 +95,28 @@ if (!enginePath) {
   process.exit(1);
 }
 
-// Determine if we're in prebuild (before .next exists) or postbuild (after .next exists)
-const isPrebuild = !fs.existsSync(path.join(webDir, ".next"));
+// Determine if we're in prebuild or postbuild
+// Check if .next/server exists and has been populated by Next.js (has app directory)
+const nextServerAppExists = fs.existsSync(path.join(webDir, ".next", "server", "app"));
 
 // Copy to multiple locations where Prisma might look
 const destinations = [];
 
-if (isPrebuild) {
-  // In prebuild, copy to a location that will be included in the build
-  // Create a .prisma-engines directory that we'll reference
-  const prebuildDir = path.join(webDir, ".prisma-engines");
-  fs.mkdirSync(prebuildDir, { recursive: true });
-  destinations.push(path.join(prebuildDir, path.basename(enginePath)));
-  console.log("Running in prebuild mode - copying engine to .prisma-engines/");
-} else {
-  // In postbuild, copy to .next/server locations
+if (nextServerAppExists) {
+  // In postbuild, .next/server exists and has been built by Next.js
+  // Copy to .next/server locations
   destinations.push(
     path.join(webDir, ".next", "server", path.basename(enginePath)),
     path.join(webDir, ".next", "server", ".prisma", "client", path.basename(enginePath))
   );
   console.log("Running in postbuild mode - copying engine to .next/server/");
+} else {
+  // In prebuild, .next doesn't exist or hasn't been built yet
+  // Copy to .prisma-engines directory (won't be wiped by Next.js build)
+  const prebuildDir = path.join(webDir, ".prisma-engines");
+  fs.mkdirSync(prebuildDir, { recursive: true });
+  destinations.push(path.join(prebuildDir, path.basename(enginePath)));
+  console.log("Running in prebuild mode - copying engine to .prisma-engines/");
 }
 
 // Also try to copy to the node_modules location Prisma checks (if it exists)
