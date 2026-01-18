@@ -6,12 +6,14 @@ export type ServerErrorMeta = {
 
 export const logServerError = (meta: ServerErrorMeta, error: unknown) => {
   const name = error instanceof Error ? error.name : "UnknownError";
+  const message = error instanceof Error ? error.message : undefined;
   const code =
     typeof error === "object" && error && "code" in error ? String(error.code) : undefined;
 
   console.error("server_error", {
     scope: meta.scope,
     name,
-    code
+    code,
+    message
   });
 };

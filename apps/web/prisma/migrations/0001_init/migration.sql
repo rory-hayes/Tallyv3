@@ -1,0 +1,95 @@
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "citext";
+
+CREATE TYPE "Region" AS ENUM ('UK', 'IE');
+CREATE TYPE "Role" AS ENUM ('ADMIN', 'PREPARER', 'REVIEWER');
+CREATE TYPE "UserStatus" AS ENUM ('INVITED', 'ACTIVE', 'DISABLED');
+CREATE TYPE "InviteStatus" AS ENUM ('PENDING', 'ACCEPTED', 'REVOKED', 'EXPIRED');
+CREATE TYPE "AuditAction" AS ENUM (
+  'USER_INVITED',
+  'USER_ROLE_CHANGED',
+  'USER_DISABLED',
+  'CLIENT_CREATED',
+  'CLIENT_UPDATED',
+  'PAY_RUN_CREATED',
+  'PAY_RUN_STATE_CHANGED',
+  'PAY_RUN_REVISION_CREATED',
+  'IMPORT_UPLOADED',
+  'IMPORT_REPLACED',
+  'IMPORT_DELETED',
+  'TEMPLATE_CREATED',
+  'TEMPLATE_VERSION_CREATED',
+  'TEMPLATE_PUBLISHED',
+  'RECONCILIATION_STARTED',
+  'RECONCILIATION_COMPLETED',
+  'EXCEPTION_CREATED',
+  'EXCEPTION_ASSIGNED',
+  'EXCEPTION_RESOLVED',
+  'EXCEPTION_DISMISSED',
+  'EXCEPTION_OVERRIDDEN',
+  'PAY_RUN_SUBMITTED_FOR_REVIEW',
+  'PAY_RUN_APPROVED',
+  'PAY_RUN_REJECTED',
+  'PACK_GENERATED',
+  'PACK_LOCKED'
+);
+CREATE TYPE "AuditEntityType" AS ENUM (
+  'CLIENT',
+  'PAY_RUN',
+  'IMPORT',
+  'TEMPLATE',
+  'EXCEPTION',
+  'PACK',
+  'USER',
+  'FIRM'
+);
+
+CREATE TABLE "Firm" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "name" TEXT NOT NULL,
+  "region" "Region" NOT NULL,
+  "timezone" TEXT NOT NULL,
+  "defaults" JSONB,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE "User" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "firmId" UUID NOT NULL REFERENCES "Firm"("id") ON DELETE CASCADE,
+  "email" CITEXT NOT NULL UNIQUE,
+  "passwordHash" TEXT,
+  "role" "Role" NOT NULL,
+  "status" "UserStatus" NOT NULL DEFAULT 'INVITED',
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE "Invite" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "firmId" UUID NOT NULL REFERENCES "Firm"("id") ON DELETE CASCADE,
+  "userId" UUID NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  "email" CITEXT NOT NULL,
+  "tokenHash" TEXT NOT NULL UNIQUE,
+  "status" "InviteStatus" NOT NULL DEFAULT 'PENDING',
+  "invitedByUserId" UUID REFERENCES "User"("id"),
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  "expiresAt" TIMESTAMPTZ NOT NULL,
+  "acceptedAt" TIMESTAMPTZ,
+  "revokedAt" TIMESTAMPTZ
+);
+
+CREATE TABLE "AuditEvent" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "firmId" UUID NOT NULL REFERENCES "Firm"("id") ON DELETE CASCADE,
+  "actorUserId" UUID REFERENCES "User"("id"),
+  "action" "AuditAction" NOT NULL,
+  "entityType" "AuditEntityType" NOT NULL,
+  "entityId" UUID,
+  "timestamp" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  "metadata" JSONB,
+  "ip" TEXT,
+  "userAgent" TEXT
+);
+
+CREATE INDEX "AuditEvent_firmId_timestamp_idx" ON "AuditEvent" ("firmId", "timestamp");
