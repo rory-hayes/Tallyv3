@@ -4,6 +4,7 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { prisma } from "@tally/db";
 import { createSessionForUser, hashPassword } from "@/lib/auth";
+import { logServerError } from "@/lib/server-errors";
 
 export type CreateFirmState = {
   error?: string;
@@ -55,33 +56,38 @@ export const createFirmAction = async (
     return { error: "An account with this email already exists." };
   }
 
-  const passwordHash = await hashPassword(parsed.data.password);
+  try {
+    const passwordHash = await hashPassword(parsed.data.password);
 
-  const firm = await prisma.firm.create({
-    data: {
-      name: parsed.data.firmName,
-      region: parsed.data.region,
-      timezone: parsed.data.timezone,
-      defaults: defaultFirmSettings,
-      users: {
-        create: {
-          email: parsed.data.email,
-          passwordHash,
-          role: "ADMIN",
-          status: "ACTIVE"
+    const firm = await prisma.firm.create({
+      data: {
+        name: parsed.data.firmName,
+        region: parsed.data.region,
+        timezone: parsed.data.timezone,
+        defaults: defaultFirmSettings,
+        users: {
+          create: {
+            email: parsed.data.email,
+            passwordHash,
+            role: "ADMIN",
+            status: "ACTIVE"
+          }
         }
+      },
+      include: {
+        users: true
       }
-    },
-    include: {
-      users: true
+    });
+
+    const adminUser = firm.users[0];
+    if (!adminUser) {
+      return { error: "Unable to create admin user." };
     }
-  });
 
-  const adminUser = firm.users[0];
-  if (!adminUser) {
-    return { error: "Unable to create admin user." };
+    await createSessionForUser(adminUser);
+    redirect("/dashboard");
+  } catch (error) {
+    logServerError({ scope: "create_firm" }, error);
+    return { error: "Unable to create workspace right now." };
   }
-
-  await createSessionForUser(adminUser);
-  redirect("/dashboard");
 };

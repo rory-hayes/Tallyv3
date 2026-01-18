@@ -4,6 +4,7 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { prisma } from "@tally/db";
 import { createSessionForUser, verifyPassword } from "@/lib/auth";
+import { logServerError } from "@/lib/server-errors";
 
 export type LoginState = {
   error?: string;
@@ -27,20 +28,25 @@ export const loginAction = async (
     return { error: "Enter a valid email and password." };
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: parsed.data.email }
-  });
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email: parsed.data.email }
+    });
 
-  if (!user || user.status !== "ACTIVE") {
-    return { error: "Invalid credentials." };
+    if (!user || user.status !== "ACTIVE") {
+      return { error: "Invalid credentials." };
+    }
+
+    const isValid = await verifyPassword(parsed.data.password, user.passwordHash);
+
+    if (!isValid) {
+      return { error: "Invalid credentials." };
+    }
+
+    await createSessionForUser(user);
+    redirect("/dashboard");
+  } catch (error) {
+    logServerError({ scope: "login" }, error);
+    return { error: "Unable to sign in right now." };
   }
-
-  const isValid = await verifyPassword(parsed.data.password, user.passwordHash);
-
-  if (!isValid) {
-    return { error: "Invalid credentials." };
-  }
-
-  await createSessionForUser(user);
-  redirect("/dashboard");
 };
