@@ -18,15 +18,6 @@ const nextConfig = {
   experimental: {
     typedRoutes: true,
     serverComponentsExternalPackages: ["@prisma/client"]
-  },
-  outputFileTracingRoot: repoRoot,
-  outputFileTracingIncludes: {
-    "/**/*": [
-      `${prismaClientRelative}/**`,
-      `${prismaPkgRelative}/**`,
-      // Include Prisma engine from .prisma-engines (copied in prebuild)
-      "apps/web/.prisma-engines/libquery_engine-*.so.node"
-    ]
   }
 };
 
