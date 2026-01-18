@@ -1,6 +1,6 @@
 import "server-only";
-// IMPORTANT: Import prisma-setup BEFORE @tally/db to ensure engine path is set
-import "./prisma-setup";
+// Prisma engine setup is handled in @tally/db/src/client.ts
+// It runs before PrismaClient is imported, so no need for separate setup here
 import { prisma } from "@tally/db";
 
 export { prisma };
