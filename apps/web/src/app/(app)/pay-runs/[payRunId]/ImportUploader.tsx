@@ -60,16 +60,22 @@ export const ImportUploader = ({ payRunId, sourceType, disabled }: ImportUploade
         throw new Error(prepareBody.error || "Unable to prepare upload.");
       }
 
-      const uploadResponse = await fetch(prepareBody.uploadUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Type": file.type || "application/octet-stream"
-        },
-        body: file
+      const uploadForm = new FormData();
+      uploadForm.append("file", file);
+      uploadForm.append("payRunId", payRunId);
+      uploadForm.append("sourceType", sourceType);
+      uploadForm.append("storageKey", prepareBody.storageKey);
+      uploadForm.append("originalFilename", file.name);
+      uploadForm.append("mimeType", file.type || "application/octet-stream");
+
+      const uploadResponse = await fetch("/api/imports/upload", {
+        method: "POST",
+        body: uploadForm
       });
 
       if (!uploadResponse.ok) {
-        throw new Error("Upload failed. Please try again.");
+        const uploadBody = await uploadResponse.json().catch(() => ({}));
+        throw new Error(uploadBody.error || "Upload failed. Please try again.");
       }
 
       const finalizeResponse = await fetch("/api/imports/finalize", {
