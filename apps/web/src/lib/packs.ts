@@ -2,7 +2,7 @@ import "server-only";
 
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedDownloadUrl } from "@tally/storage";
-import { prisma, type Pack, type PayRunStatus } from "@tally/db";
+import { prisma, type Pack, type PayRunStatus } from "@/lib/prisma";
 import { storageBucket, storageClient } from "./storage";
 import { recordAuditEvent } from "./audit";
 import { NotFoundError, ValidationError } from "./errors";

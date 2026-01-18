@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { prisma, type Role, UserStatus } from "@tally/db";
+import { prisma, type Role, UserStatus } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { recordAuditEvent } from "@/lib/audit";
 import { generateInviteToken } from "@/lib/token";

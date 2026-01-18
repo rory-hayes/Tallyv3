@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Readable } from "stream";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { prisma } from "@tally/db";
+import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/clients";
 import { createPayRun } from "@/lib/pay-runs";
 import { getImportPreview } from "@/lib/import-preview";

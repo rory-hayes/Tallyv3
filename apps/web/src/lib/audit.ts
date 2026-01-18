@@ -3,7 +3,7 @@ import {
   prisma,
   type AuditAction,
   type AuditEntityType
-} from "@tally/db";
+} from "@/lib/prisma";
 import { sanitizeAuditMetadata, type AuditMetadata } from "./audit-metadata";
 
 type AuditEventInput = {

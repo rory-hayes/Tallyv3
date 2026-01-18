@@ -1,0 +1,474 @@
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Region {
+  UK
+  IE
+}
+
+enum Role {
+  ADMIN
+  PREPARER
+  REVIEWER
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum PayrollSystem {
+  BRIGHTPAY
+  STAFFOLOGY
+  OTHER
+}
+
+enum PayrollFrequency {
+  WEEKLY
+  FORTNIGHTLY
+  MONTHLY
+  OTHER
+}
+
+enum PayRunStatus {
+  DRAFT
+  IMPORTED
+  MAPPED
+  RECONCILING
+  RECONCILED
+  EXCEPTIONS_OPEN
+  READY_FOR_REVIEW
+  APPROVED
+  PACKED
+  LOCKED
+  ARCHIVED
+}
+
+enum SourceType {
+  REGISTER
+  BANK
+  GL
+  STATUTORY
+}
+
+enum ImportParseStatus {
+  PENDING
+  PARSED
+  FAILED
+}
+
+enum MappingTemplateStatus {
+  DRAFT
+  ACTIVE
+  DEPRECATED
+}
+
+enum ReconciliationStatus {
+  SUCCESS
+  FAILED
+}
+
+enum CheckStatus {
+  PASS
+  WARN
+  FAIL
+}
+
+enum CheckSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum CheckType {
+  CHK_REGISTER_NET_TO_BANK_TOTAL
+  CHK_JOURNAL_DEBITS_EQUAL_CREDITS
+}
+
+enum ExceptionStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+  OVERRIDDEN
+}
+
+enum ExceptionCategory {
+  BANK_MISMATCH
+  JOURNAL_MISMATCH
+  STATUTORY_MISMATCH
+  SANITY
+}
+
+enum ApprovalStatus {
+  APPROVED
+  REJECTED
+}
+
+enum AuditAction {
+  USER_INVITED
+  USER_ROLE_CHANGED
+  USER_DISABLED
+  CLIENT_CREATED
+  CLIENT_UPDATED
+  PAY_RUN_CREATED
+  PAY_RUN_STATE_CHANGED
+  PAY_RUN_REVISION_CREATED
+  IMPORT_UPLOADED
+  IMPORT_REPLACED
+  IMPORT_DELETED
+  TEMPLATE_CREATED
+  TEMPLATE_VERSION_CREATED
+  TEMPLATE_PUBLISHED
+  TEMPLATE_DEPRECATED
+  RECONCILIATION_STARTED
+  RECONCILIATION_COMPLETED
+  EXCEPTION_CREATED
+  EXCEPTION_ASSIGNED
+  EXCEPTION_RESOLVED
+  EXCEPTION_DISMISSED
+  EXCEPTION_OVERRIDDEN
+  PAY_RUN_SUBMITTED_FOR_REVIEW
+  PAY_RUN_APPROVED
+  PAY_RUN_REJECTED
+  PACK_GENERATED
+  PACK_LOCKED
+}
+
+enum AuditEntityType {
+  CLIENT
+  PAY_RUN
+  IMPORT
+  TEMPLATE
+  EXCEPTION
+  PACK
+  USER
+  FIRM
+}
+
+model Firm {
+  id         String  @id @default(uuid()) @db.Uuid
+  name       String
+  region     Region
+  timezone   String
+  defaults   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  users       User[]
+  invites     Invite[]
+  clients     Client[]
+  payRuns     PayRun[]
+  approvals   Approval[]
+  packs       Pack[]
+  imports     Import[]
+  mappingTemplates MappingTemplate[]
+  reconciliationRuns ReconciliationRun[]
+  exceptions Exception[]
+  auditEvents AuditEvent[]
+}
+
+model User {
+  id            String     @id @default(uuid()) @db.Uuid
+  firmId        String     @db.Uuid
+  firm          Firm       @relation(fields: [firmId], references: [id])
+  email         String     @unique @db.Citext
+  passwordHash  String?
+  role          Role
+  status        UserStatus @default(INVITED)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  invites     Invite[]     @relation("InviteUser")
+  sentInvites Invite[]     @relation("InviteSender")
+  auditEvents AuditEvent[] @relation("AuditActor")
+  defaultReviewClients Client[] @relation("ClientDefaultReviewer")
+  uploadedImports Import[]
+  createdMappingTemplates MappingTemplate[]
+  reconciliationRuns ReconciliationRun[]
+  assignedExceptions Exception[] @relation("ExceptionAssignedTo")
+  resolvedExceptions Exception[] @relation("ExceptionResolvedBy")
+  approvals Approval[] @relation("ApprovalReviewer")
+  generatedPacks Pack[] @relation("PackGeneratedBy")
+  lockedPacks Pack[] @relation("PackLockedBy")
+}
+
+model Invite {
+  id              String       @id @default(uuid()) @db.Uuid
+  firmId          String       @db.Uuid
+  firm            Firm         @relation(fields: [firmId], references: [id])
+  userId          String       @db.Uuid
+  user            User         @relation("InviteUser", fields: [userId], references: [id])
+  email           String       @db.Citext
+  tokenHash       String       @unique
+  status          InviteStatus @default(PENDING)
+  invitedByUserId String?      @db.Uuid
+  invitedByUser   User?        @relation("InviteSender", fields: [invitedByUserId], references: [id])
+  createdAt       DateTime     @default(now())
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  revokedAt       DateTime?
+}
+
+model Client {
+  id                    String           @id @default(uuid()) @db.Uuid
+  firmId                String           @db.Uuid
+  firm                  Firm             @relation(fields: [firmId], references: [id])
+  name                  String
+  payrollSystem         PayrollSystem
+  payrollSystemOther    String?
+  payrollFrequency      PayrollFrequency
+  defaultReviewerUserId String?          @db.Uuid
+  defaultReviewer       User?            @relation("ClientDefaultReviewer", fields: [defaultReviewerUserId], references: [id])
+  archivedAt            DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  payRuns PayRun[]
+  imports Import[]
+  mappingTemplates MappingTemplate[]
+
+  @@index([firmId])
+  @@index([defaultReviewerUserId])
+}
+
+model PayRun {
+  id          String       @id @default(uuid()) @db.Uuid
+  firmId      String       @db.Uuid
+  firm        Firm         @relation(fields: [firmId], references: [id])
+  clientId    String       @db.Uuid
+  client      Client       @relation(fields: [clientId], references: [id])
+  periodStart DateTime
+  periodEnd   DateTime
+  periodLabel String
+  revision    Int          @default(1)
+  status      PayRunStatus @default(DRAFT)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  imports Import[]
+  reconciliationRuns ReconciliationRun[]
+  exceptions Exception[]
+  approvals Approval[]
+  packs Pack[]
+
+  @@unique([clientId, periodStart, periodEnd, revision])
+  @@index([firmId])
+  @@index([clientId])
+}
+
+model Import {
+  id                     String            @id @default(uuid()) @db.Uuid
+  firmId                 String            @db.Uuid
+  firm                   Firm              @relation(fields: [firmId], references: [id])
+  clientId               String            @db.Uuid
+  client                 Client            @relation(fields: [clientId], references: [id])
+  payRunId               String            @db.Uuid
+  payRun                 PayRun            @relation(fields: [payRunId], references: [id])
+  sourceType             SourceType
+  version                Int
+  storageUri             String
+  fileHashSha256         String
+  originalFilename       String
+  mimeType               String
+  sizeBytes              Int
+  uploadedByUserId       String            @db.Uuid
+  uploadedByUser         User              @relation(fields: [uploadedByUserId], references: [id])
+  uploadedAt             DateTime          @default(now())
+  parseStatus            ImportParseStatus @default(PENDING)
+  mappingTemplateVersionId String?         @db.Uuid
+  mappingTemplateVersion   MappingTemplate? @relation(fields: [mappingTemplateVersionId], references: [id])
+  normalizedDatasetId    String?           @db.Uuid
+  parseSummary           Json?
+
+  @@unique([payRunId, sourceType, version])
+  @@unique([payRunId, sourceType, fileHashSha256])
+  @@index([firmId])
+  @@index([clientId])
+  @@index([payRunId])
+  @@index([uploadedByUserId])
+}
+
+model MappingTemplate {
+  id               String                @id @default(uuid()) @db.Uuid
+  firmId           String                @db.Uuid
+  firm             Firm                  @relation(fields: [firmId], references: [id])
+  clientId         String?               @db.Uuid
+  client           Client?               @relation(fields: [clientId], references: [id])
+  sourceType       SourceType
+  version          Int
+  name             String
+  status           MappingTemplateStatus @default(DRAFT)
+  sourceColumns    Json
+  columnMap        Json
+  normalizationRules Json?
+  headerRowIndex   Int?
+  sheetName        String?
+  createdByUserId  String                @db.Uuid
+  createdByUser    User                  @relation(fields: [createdByUserId], references: [id])
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  imports          Import[]
+
+  @@unique([firmId, clientId, sourceType, name, version])
+  @@index([firmId, clientId, sourceType])
+  @@index([createdByUserId])
+}
+
+model ReconciliationRun {
+  id              String               @id @default(uuid()) @db.Uuid
+  firmId          String               @db.Uuid
+  firm            Firm                 @relation(fields: [firmId], references: [id])
+  payRunId        String               @db.Uuid
+  payRun          PayRun               @relation(fields: [payRunId], references: [id])
+  runNumber       Int
+  bundleId        String
+  bundleVersion   String
+  status          ReconciliationStatus
+  inputSummary    Json
+  executedByUserId String?             @db.Uuid
+  executedByUser  User?                @relation(fields: [executedByUserId], references: [id])
+  supersededAt    DateTime?
+  supersededByRunId String?            @db.Uuid
+  supersededByRun ReconciliationRun?   @relation("ReconciliationSupersededBy", fields: [supersededByRunId], references: [id])
+  supersededRuns  ReconciliationRun[]  @relation("ReconciliationSupersededBy")
+  createdAt       DateTime             @default(now())
+
+  checkResults    CheckResult[]
+  exceptions      Exception[]
+  packs           Pack[]
+
+  @@unique([payRunId, runNumber])
+  @@index([firmId, payRunId])
+  @@index([supersededByRunId])
+}
+
+model CheckResult {
+  id                 String        @id @default(uuid()) @db.Uuid
+  reconciliationRunId String       @db.Uuid
+  reconciliationRun  ReconciliationRun @relation(fields: [reconciliationRunId], references: [id])
+  checkType          CheckType
+  checkVersion       String
+  status             CheckStatus
+  severity           CheckSeverity
+  summary            String
+  details            Json
+  evidence           Json?
+  createdAt          DateTime       @default(now())
+
+  exception          Exception?
+
+  @@index([reconciliationRunId])
+  @@index([checkType])
+}
+
+model Exception {
+  id                 String            @id @default(uuid()) @db.Uuid
+  firmId             String            @db.Uuid
+  firm               Firm              @relation(fields: [firmId], references: [id])
+  payRunId           String            @db.Uuid
+  payRun             PayRun            @relation(fields: [payRunId], references: [id])
+  reconciliationRunId String           @db.Uuid
+  reconciliationRun  ReconciliationRun @relation(fields: [reconciliationRunId], references: [id])
+  checkResultId      String            @unique @db.Uuid
+  checkResult        CheckResult       @relation(fields: [checkResultId], references: [id])
+  category           ExceptionCategory
+  severity           CheckSeverity
+  status             ExceptionStatus   @default(OPEN)
+  title              String
+  description        String
+  evidence           Json?
+  supersededAt       DateTime?
+  supersededByRunId  String?           @db.Uuid
+  assignedToUserId   String?           @db.Uuid
+  assignedToUser     User?             @relation("ExceptionAssignedTo", fields: [assignedToUserId], references: [id])
+  resolutionNote     String?
+  resolutionAttachmentUri String?
+  resolvedByUserId   String?           @db.Uuid
+  resolvedByUser     User?             @relation("ExceptionResolvedBy", fields: [resolvedByUserId], references: [id])
+  resolvedAt         DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([firmId, payRunId])
+  @@index([reconciliationRunId])
+  @@index([supersededByRunId])
+  @@index([assignedToUserId])
+  @@index([resolvedByUserId])
+}
+
+model Approval {
+  id             String         @id @default(uuid()) @db.Uuid
+  firmId         String         @db.Uuid
+  firm           Firm           @relation(fields: [firmId], references: [id])
+  payRunId       String         @db.Uuid
+  payRun         PayRun         @relation(fields: [payRunId], references: [id])
+  reviewerUserId String         @db.Uuid
+  reviewerUser   User           @relation("ApprovalReviewer", fields: [reviewerUserId], references: [id])
+  status         ApprovalStatus
+  comment        String?
+  createdAt      DateTime       @default(now())
+
+  @@index([firmId, payRunId])
+  @@index([reviewerUserId])
+}
+
+model Pack {
+  id                  String            @id @default(uuid()) @db.Uuid
+  firmId              String            @db.Uuid
+  firm                Firm              @relation(fields: [firmId], references: [id])
+  payRunId            String            @db.Uuid
+  payRun              PayRun            @relation(fields: [payRunId], references: [id])
+  reconciliationRunId String            @db.Uuid
+  reconciliationRun   ReconciliationRun @relation(fields: [reconciliationRunId], references: [id])
+  packVersion         Int
+  storageUriPdf       String
+  storageUriBundle    String?
+  metadata            Json
+  generatedAt         DateTime          @default(now())
+  generatedByUserId   String            @db.Uuid
+  generatedByUser     User              @relation("PackGeneratedBy", fields: [generatedByUserId], references: [id])
+  lockedAt            DateTime?
+  lockedByUserId      String?           @db.Uuid
+  lockedByUser        User?             @relation("PackLockedBy", fields: [lockedByUserId], references: [id])
+
+  @@unique([payRunId, packVersion])
+  @@index([firmId, payRunId])
+  @@index([reconciliationRunId])
+  @@index([generatedByUserId])
+  @@index([lockedByUserId])
+}
+
+model AuditEvent {
+  id          String          @id @default(uuid()) @db.Uuid
+  firmId      String          @db.Uuid
+  firm        Firm            @relation(fields: [firmId], references: [id])
+  actorUserId String?         @db.Uuid
+  actorUser   User?           @relation("AuditActor", fields: [actorUserId], references: [id])
+  action      AuditAction
+  entityType  AuditEntityType
+  entityId    String?         @db.Uuid
+  timestamp   DateTime        @default(now())
+  metadata    Json?
+  ip          String?
+  userAgent   String?
+
+  @@index([firmId, timestamp])
+}

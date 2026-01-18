@@ -5,7 +5,7 @@ import type {
   CheckStatus,
   CheckType,
   ExceptionCategory
-} from "@tally/db";
+} from "@/lib/prisma";
 
 export type AmountRow = {
   rowNumber: number;

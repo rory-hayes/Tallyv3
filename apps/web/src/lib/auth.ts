@@ -1,7 +1,7 @@
 import "server-only";
 import { compare, hash } from "bcryptjs";
 import { redirect } from "next/navigation";
-import { prisma, type User } from "@tally/db";
+import { prisma, type User } from "@/lib/prisma";
 import { getSession } from "./session";
 
 export const requireSession = async () => {

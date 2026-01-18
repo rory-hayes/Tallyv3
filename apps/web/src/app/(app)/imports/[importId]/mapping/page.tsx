@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { prisma, type SourceType } from "@tally/db";
+import { prisma, type SourceType } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { MappingWizard } from "./MappingWizard";
 

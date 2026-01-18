@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Route } from "next";
-import { prisma, type PayRunStatus, Prisma } from "@tally/db";
+import { prisma, type PayRunStatus, Prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { getPackDownloadUrl } from "@/lib/packs";
 

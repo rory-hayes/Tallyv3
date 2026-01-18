@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { SourceType } from "@tally/db";
+import type { SourceType } from "@/lib/prisma";
 import { sha256Hex } from "@/lib/hash";
 
 type ImportUploaderProps = {

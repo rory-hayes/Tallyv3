@@ -1,7 +1,7 @@
 import "server-only";
 import { getIronSession, type SessionOptions } from "iron-session";
 import { cookies } from "next/headers";
-import type { Role } from "@tally/db";
+import type { Role } from "@/lib/prisma";
 import { env } from "./env";
 
 export type SessionData = {

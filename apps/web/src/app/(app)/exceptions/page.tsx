@@ -5,7 +5,7 @@ import {
   type CheckSeverity,
   type ExceptionCategory,
   type ExceptionStatus
-} from "@tally/db";
+} from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 
 type ExceptionsPageProps = {

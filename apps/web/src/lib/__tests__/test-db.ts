@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { prisma, type Role } from "@tally/db";
+import { prisma, type Role } from "@/lib/prisma";
 
 export const resetDb = async () => {
   await prisma.exception.deleteMany();

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import type { PayrollFrequency, PayrollSystem, Role } from "@tally/db";
+import type { PayrollFrequency, PayrollSystem, Role } from "@/lib/prisma";
 import type { ClientFormState } from "./actions";
 
 type ReviewerOption = {

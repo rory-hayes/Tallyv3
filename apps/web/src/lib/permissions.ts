@@ -1,4 +1,4 @@
-import type { Role } from "@tally/db";
+import type { Role } from "@/lib/prisma";
 
 export type Permission =
   | "firm:manage"

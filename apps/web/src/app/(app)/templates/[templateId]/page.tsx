@@ -5,7 +5,7 @@ import {
   prisma,
   type MappingTemplateStatus,
   type SourceType
-} from "@tally/db";
+} from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import {
   detectColumnDrift,

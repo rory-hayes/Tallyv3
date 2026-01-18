@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { prisma } from "@tally/db";
+import { prisma } from "@/lib/prisma";
 import { sanitizeAuditMetadata } from "@/lib/audit-metadata";
 import { recordAuditEvent } from "@/lib/audit";
 import { createFirmWithUser, resetDb } from "./test-db";

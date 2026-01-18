@@ -1,6 +1,6 @@
 import "server-only";
 
-import { prisma, type PayrollFrequency, type PayrollSystem } from "@tally/db";
+import { prisma, type PayrollFrequency, type PayrollSystem } from "@/lib/prisma";
 import { recordAuditEvent } from "./audit";
 import { ConflictError, NotFoundError, ValidationError } from "./errors";
 

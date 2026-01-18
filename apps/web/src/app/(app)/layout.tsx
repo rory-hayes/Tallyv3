@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { prisma } from "@tally/db";
+import { prisma } from "@/lib/prisma";
 import { AppShell } from "@/components/AppShell";
 import { requireSession } from "@/lib/auth";
 

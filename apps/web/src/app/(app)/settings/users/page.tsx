@@ -1,4 +1,4 @@
-import { prisma } from "@tally/db";
+import { prisma } from "@/lib/prisma";
 import { InviteUserForm } from "./InviteUserForm";
 import { updateUserRoleFromForm } from "./actions";
 import { requireUser } from "@/lib/auth";

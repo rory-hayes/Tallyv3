@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { notFound } from "next/navigation";
-import { prisma } from "@tally/db";
+import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import type { CheckDetails, EvidencePointer } from "@/lib/reconciliation-checks";
 import { ExceptionActions } from "../ExceptionActions";

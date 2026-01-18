@@ -1,4 +1,4 @@
-import type { SourceType } from "@tally/db";
+import type { SourceType } from "@/lib/prisma";
 
 export type ColumnMap = Record<string, string | null | undefined>;
 

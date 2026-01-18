@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { notFound } from "next/navigation";
-import { prisma, type PayrollSystem } from "@tally/db";
+import { prisma, type PayrollSystem } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { getPackDownloadUrl } from "@/lib/packs";
 

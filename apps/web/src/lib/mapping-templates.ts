@@ -4,7 +4,7 @@ import {
   prisma,
   type MappingTemplateStatus,
   type SourceType
-} from "@tally/db";
+} from "@/lib/prisma";
 import { recordAuditEvent } from "./audit";
 import { NotFoundError, ValidationError } from "./errors";
 import { transitionPayRunStatus } from "./pay-runs";

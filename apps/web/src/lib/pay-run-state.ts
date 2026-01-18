@@ -1,4 +1,4 @@
-import type { PayRunStatus, Role } from "@tally/db";
+import type { PayRunStatus, Role } from "@/lib/prisma";
 import { ValidationError } from "./errors";
 
 export type ActorRole = Role | "SYSTEM";

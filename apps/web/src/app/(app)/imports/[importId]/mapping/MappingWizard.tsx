@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { SourceType } from "@tally/db";
+import type { SourceType } from "@/lib/prisma";
 import {
   areColumnMapsEquivalent,
   detectColumnDrift,

@@ -1,4 +1,4 @@
-import { prisma } from "@tally/db";
+import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { getPackDownloadUrl } from "@/lib/packs";
 

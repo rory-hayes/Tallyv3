@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@tally/db";
+import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { ClientForm } from "../../ClientForm";
 import { updateClientAction } from "../../actions";

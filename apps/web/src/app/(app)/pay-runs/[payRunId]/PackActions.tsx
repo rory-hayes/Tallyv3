@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { PayRunStatus, Role } from "@tally/db";
+import type { PayRunStatus, Role } from "@/lib/prisma";
 
 type PackSummary = {
   id: string;

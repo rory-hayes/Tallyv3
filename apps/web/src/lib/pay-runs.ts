@@ -1,6 +1,6 @@
 import "server-only";
 
-import { prisma, type PayRunStatus } from "@tally/db";
+import { prisma, type PayRunStatus } from "@/lib/prisma";
 import { recordAuditEvent } from "./audit";
 import { ConflictError, NotFoundError, ValidationError } from "./errors";
 import { assertPayRunTransition, type ActorRole } from "./pay-run-state";

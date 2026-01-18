@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { redirect } from "next/navigation";
-import { prisma } from "@tally/db";
+import { prisma } from "@/lib/prisma";
 import { createSessionForUser, verifyPassword } from "@/lib/auth";
 import { logServerError } from "@/lib/server-errors";
 

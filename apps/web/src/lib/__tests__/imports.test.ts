@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { prisma } from "@tally/db";
+import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/clients";
 import { createPayRun } from "@/lib/pay-runs";
 import {

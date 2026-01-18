@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { User } from "@tally/db";
-import { prisma } from "@tally/db";
+import type { User } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 
 const { redirect, getSession } = vi.hoisted(() => ({
   redirect: vi.fn(() => {

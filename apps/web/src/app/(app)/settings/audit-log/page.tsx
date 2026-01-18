@@ -1,4 +1,4 @@
-import { prisma } from "@tally/db";
+import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { requirePermission } from "@/lib/permissions";
 import { SettingsNav } from "@/components/SettingsNav";

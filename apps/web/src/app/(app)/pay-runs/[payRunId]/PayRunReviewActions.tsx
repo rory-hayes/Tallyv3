@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { PayRunStatus, Role, SourceType } from "@tally/db";
+import type { PayRunStatus, Role, SourceType } from "@/lib/prisma";
 import type { ReviewGateResult } from "@/lib/pay-run-review";
 
 type PayRunReviewActionsProps = {

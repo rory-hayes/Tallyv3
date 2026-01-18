@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Route } from "next";
-import { prisma, type PayRunStatus, type SourceType } from "@tally/db";
+import { prisma, type PayRunStatus, type SourceType } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 
 const statusLabels: Record<PayRunStatus, string> = {

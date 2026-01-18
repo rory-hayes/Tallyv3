@@ -1,4 +1,4 @@
-import { Prisma } from "@tally/db";
+import { Prisma } from "@/lib/prisma";
 
 export type AuditMetadata = Record<string, unknown>;
 

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { prisma } from "@tally/db";
+import { prisma } from "@/lib/prisma";
 import { recordAuditEvent } from "./audit";
 import { NotFoundError, ValidationError } from "./errors";
 

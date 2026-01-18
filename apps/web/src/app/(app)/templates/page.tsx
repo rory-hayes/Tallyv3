@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Route } from "next";
-import { prisma, type MappingTemplateStatus, type SourceType, Prisma } from "@tally/db";
+import { prisma, type MappingTemplateStatus, type SourceType, Prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { detectColumnDrift } from "@/lib/mapping-utils";
 

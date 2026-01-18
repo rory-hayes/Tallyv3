@@ -5,7 +5,7 @@ import {
   prisma,
   type ImportParseStatus,
   type SourceType
-} from "@tally/db";
+} from "@/lib/prisma";
 import { recordAuditEvent } from "./audit";
 import { ConflictError, NotFoundError, ValidationError } from "./errors";
 import { transitionPayRunStatus } from "./pay-runs";

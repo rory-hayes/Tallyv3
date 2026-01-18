@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ExceptionStatus, Role } from "@tally/db";
+import type { ExceptionStatus, Role } from "@/lib/prisma";
 
 type ExceptionActionsProps = {
   exceptionId: string;

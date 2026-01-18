@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import type { ReactNode } from "react";
-import type { Role } from "@tally/db";
+import type { Role } from "@/lib/prisma";
 import { logoutAction } from "@/app/(app)/actions";
 
 const navItems: Array<{

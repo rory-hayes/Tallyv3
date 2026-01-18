@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Route } from "next";
-import { prisma, type PayrollSystem } from "@tally/db";
+import { prisma, type PayrollSystem } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { archiveClientAction } from "./actions";
 

@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { PermissionError, requirePermission } from "@/lib/permissions";
 import { buildStorageKey, isAllowedUpload } from "@/lib/imports";
 import { storageBucket, storageClient } from "@/lib/storage";
-import { prisma } from "@tally/db";
+import { prisma } from "@/lib/prisma";
 
 const prepareSchema = z.object({
   payRunId: z.string().uuid(),

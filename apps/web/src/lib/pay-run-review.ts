@@ -1,6 +1,6 @@
 import "server-only";
 
-import { prisma, type SourceType } from "@tally/db";
+import { prisma, type SourceType } from "@/lib/prisma";
 import { recordAuditEvent } from "./audit";
 import { NotFoundError, ValidationError } from "./errors";
 import { transitionPayRunStatus } from "./pay-runs";
