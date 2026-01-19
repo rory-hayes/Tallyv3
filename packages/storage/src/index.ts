@@ -2,7 +2,7 @@ import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export type StorageConfig = {
-  endpoint: string;
+  endpoint?: string;
   region: string;
   bucket: string;
   accessKeyId: string;
@@ -20,7 +20,7 @@ export type SignedUrlParams = {
 export const createS3Client = (config: StorageConfig): S3Client =>
   new S3Client({
     region: config.region,
-    endpoint: config.endpoint,
+    ...(config.endpoint ? { endpoint: config.endpoint } : {}),
     forcePathStyle: config.forcePathStyle ?? false,
     credentials: {
       accessKeyId: config.accessKeyId,

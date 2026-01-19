@@ -2,11 +2,15 @@ import "server-only";
 import { createS3Client, type StorageConfig } from "@tally/storage";
 import { env } from "./env";
 
-const normalizeS3Endpoint = (endpoint: string, region: string) => {
+const normalizeS3Endpoint = (endpoint: string | undefined, region: string) => {
   let normalizedEndpoint = endpoint;
   let normalizedRegion = region;
 
   try {
+    if (!endpoint) {
+      return { endpoint: undefined, region: normalizedRegion };
+    }
+
     const url = new URL(endpoint);
     const host = url.host;
 
@@ -25,6 +29,11 @@ const normalizeS3Endpoint = (endpoint: string, region: string) => {
       console.warn(
         `[storage] S3 region mismatch: env=${region}, endpoint=${regionMatch[1]}. Using endpoint region.`
       );
+    }
+
+    // For AWS S3, prefer leaving endpoint undefined so the SDK derives it from region
+    if (host.endsWith("amazonaws.com") && !host.includes("s3-website")) {
+      normalizedEndpoint = undefined;
     }
   } catch (error) {
     // If parsing fails, keep the original values
@@ -50,5 +59,5 @@ export const storageBucket = storageConfig.bucket;
 
 const safeKeySuffix = env.S3_ACCESS_KEY_ID.slice(-4);
 console.warn(
-  `[storage] S3 config: bucket=${env.S3_BUCKET}, region=${normalized.region}, endpoint=${normalized.endpoint}, pathStyle=${env.S3_FORCE_PATH_STYLE}, keySuffix=****${safeKeySuffix}${env.S3_SESSION_TOKEN ? ", sessionToken=present" : ""}`
+  `[storage] S3 config: bucket=${env.S3_BUCKET}, region=${normalized.region}, endpoint=${normalized.endpoint ?? "auto"}, pathStyle=${env.S3_FORCE_PATH_STYLE}, keySuffix=****${safeKeySuffix}${env.S3_SESSION_TOKEN ? ", sessionToken=present" : ""}`
 );
