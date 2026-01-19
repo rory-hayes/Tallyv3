@@ -2,9 +2,42 @@ import "server-only";
 import { createS3Client, type StorageConfig } from "@tally/storage";
 import { env } from "./env";
 
+const normalizeS3Endpoint = (endpoint: string, region: string) => {
+  let normalizedEndpoint = endpoint;
+  let normalizedRegion = region;
+
+  try {
+    const url = new URL(endpoint);
+    const host = url.host;
+
+    // If the endpoint is an S3 website endpoint, convert to API endpoint
+    if (host.includes("s3-website")) {
+      normalizedEndpoint = endpoint.replace("s3-website", "s3");
+      console.warn(
+        "[storage] S3 endpoint is a website endpoint; using API endpoint instead."
+      );
+    }
+
+    // If the endpoint contains an AWS region, prefer that to avoid signature mismatch
+    const regionMatch = host.match(/s3[.-]([a-z0-9-]+)\.amazonaws\.com/);
+    if (regionMatch && regionMatch[1] && regionMatch[1] !== region) {
+      normalizedRegion = regionMatch[1];
+      console.warn(
+        `[storage] S3 region mismatch: env=${region}, endpoint=${regionMatch[1]}. Using endpoint region.`
+      );
+    }
+  } catch (error) {
+    // If parsing fails, keep the original values
+  }
+
+  return { endpoint: normalizedEndpoint, region: normalizedRegion };
+};
+
+const normalized = normalizeS3Endpoint(env.S3_ENDPOINT, env.S3_REGION);
+
 const storageConfig: StorageConfig = {
-  endpoint: env.S3_ENDPOINT,
-  region: env.S3_REGION,
+  endpoint: normalized.endpoint,
+  region: normalized.region,
   bucket: env.S3_BUCKET,
   accessKeyId: env.S3_ACCESS_KEY_ID,
   secretAccessKey: env.S3_SECRET_ACCESS_KEY,
