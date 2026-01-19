@@ -4,7 +4,7 @@ import { prisma, type PayRunStatus } from "@/lib/prisma";
 import { recordAuditEvent } from "./audit";
 import { ConflictError, NotFoundError, ValidationError } from "./errors";
 import { assertPayRunTransition, type ActorRole } from "./pay-run-state";
-import { formatPeriodLabel } from "./pay-run-utils";
+import { assertReasonablePeriod, formatPeriodLabel } from "./pay-run-utils";
 
 export type PayRunInput = {
   clientId: string;
@@ -30,6 +30,7 @@ const ensureClientActive = async (firmId: string, clientId: string) => {
   if (!client) {
     throw new NotFoundError("Client not found.");
   }
+  return client;
 };
 
 export const createPayRun = async (
@@ -40,7 +41,8 @@ export const createPayRun = async (
     throw new ValidationError("Period start must be before period end.");
   }
 
-  await ensureClientActive(context.firmId, input.clientId);
+  const client = await ensureClientActive(context.firmId, input.clientId);
+  assertReasonablePeriod(input.periodStart, input.periodEnd, client.payrollFrequency);
 
   const periodLabel = formatPeriodLabel(input.periodStart, input.periodEnd);
 

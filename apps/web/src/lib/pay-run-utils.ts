@@ -1,4 +1,5 @@
 import { ValidationError } from "./errors";
+import type { PayrollFrequency } from "@/lib/prisma";
 
 export const parseDateInput = (value: string): Date => {
   if (!value) {
@@ -28,6 +29,33 @@ export const parseDateInput = (value: string): Date => {
   }
 
   return parsed;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const calculateInclusiveDays = (start: Date, end: Date) =>
+  Math.floor((end.getTime() - start.getTime()) / DAY_MS) + 1;
+
+const frequencyRanges: Record<PayrollFrequency, { min: number; max: number }> =
+  {
+    WEEKLY: { min: 5, max: 9 },
+    FORTNIGHTLY: { min: 12, max: 16 },
+    MONTHLY: { min: 28, max: 31 },
+    OTHER: { min: 1, max: 45 }
+  };
+
+export const assertReasonablePeriod = (
+  start: Date,
+  end: Date,
+  frequency: PayrollFrequency
+) => {
+  const { min, max } = frequencyRanges[frequency];
+  const days = calculateInclusiveDays(start, end);
+  if (days < min || days > max) {
+    throw new ValidationError(
+      `Period length (${days} days) is outside the expected ${frequency.toLowerCase()} range (${min}-${max} days).`
+    );
+  }
 };
 
 const dateFormatter = new Intl.DateTimeFormat("en-GB", {

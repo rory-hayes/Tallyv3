@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatPeriodLabel, parseDateInput } from "@/lib/pay-run-utils";
+import {
+  assertReasonablePeriod,
+  formatPeriodLabel,
+  parseDateInput
+} from "@/lib/pay-run-utils";
 import { ValidationError } from "@/lib/errors";
 
 describe("pay run utils", () => {
@@ -28,5 +32,19 @@ describe("pay run utils", () => {
     const start = new Date(Date.UTC(2026, 0, 1));
     const end = new Date(Date.UTC(2026, 0, 31));
     expect(formatPeriodLabel(start, end)).toBe("01 Jan 2026 – 31 Jan 2026");
+  });
+
+  it("accepts reasonable weekly periods", () => {
+    const start = new Date(Date.UTC(2026, 0, 1));
+    const end = new Date(Date.UTC(2026, 0, 7));
+    expect(() => assertReasonablePeriod(start, end, "WEEKLY")).not.toThrow();
+  });
+
+  it("rejects unreasonable weekly periods", () => {
+    const start = new Date(Date.UTC(2026, 0, 1));
+    const end = new Date(Date.UTC(2026, 0, 20));
+    expect(() => assertReasonablePeriod(start, end, "WEEKLY")).toThrow(
+      ValidationError
+    );
   });
 });
