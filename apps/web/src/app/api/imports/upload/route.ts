@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { PermissionError, requirePermission } from "@/lib/permissions";
 import { assertStorageKeyMatches, isAllowedUpload } from "@/lib/imports";
 import { storageBucket, storageClient } from "@/lib/storage";
+import { logServerError } from "@/lib/server-errors";
 
 const uploadSchema = z.object({
   payRunId: z.string().uuid(),
@@ -64,6 +65,7 @@ export const POST = async (request: Request) => {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
+    logServerError({ scope: "import_upload" }, error);
     return errorResponse(500, "Upload failed.");
   }
 };
