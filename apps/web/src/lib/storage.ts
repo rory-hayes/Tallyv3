@@ -41,8 +41,14 @@ const storageConfig: StorageConfig = {
   bucket: env.S3_BUCKET,
   accessKeyId: env.S3_ACCESS_KEY_ID,
   secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+  sessionToken: env.S3_SESSION_TOKEN,
   forcePathStyle: env.S3_FORCE_PATH_STYLE === "true"
 };
 
 export const storageClient = createS3Client(storageConfig);
 export const storageBucket = storageConfig.bucket;
+
+const safeKeySuffix = env.S3_ACCESS_KEY_ID.slice(-4);
+console.warn(
+  `[storage] S3 config: bucket=${env.S3_BUCKET}, region=${normalized.region}, endpoint=${normalized.endpoint}, pathStyle=${env.S3_FORCE_PATH_STYLE}, keySuffix=****${safeKeySuffix}${env.S3_SESSION_TOKEN ? ", sessionToken=present" : ""}`
+);

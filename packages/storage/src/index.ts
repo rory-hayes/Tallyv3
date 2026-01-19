@@ -7,6 +7,7 @@ export type StorageConfig = {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
+  sessionToken?: string;
   forcePathStyle?: boolean;
 };
 
@@ -23,7 +24,8 @@ export const createS3Client = (config: StorageConfig): S3Client =>
     forcePathStyle: config.forcePathStyle ?? false,
     credentials: {
       accessKeyId: config.accessKeyId,
-      secretAccessKey: config.secretAccessKey
+      secretAccessKey: config.secretAccessKey,
+      sessionToken: config.sessionToken
     }
   });
 
