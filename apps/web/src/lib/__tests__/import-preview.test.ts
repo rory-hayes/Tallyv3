@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/clients";
 import { createPayRun } from "@/lib/pay-runs";
 import { getImportPreview } from "@/lib/import-preview";
+import * as importFile from "@/lib/import-file";
 import { storageBucket, storageClient } from "@/lib/storage";
 import { NotFoundError, ValidationError } from "@/lib/errors";
 import { createFirmWithUser, resetDb } from "./test-db";
@@ -51,7 +52,7 @@ describe("import preview", () => {
         mimeType: "text/csv",
         sizeBytes: 120,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 
@@ -65,6 +66,75 @@ describe("import preview", () => {
     const preview = await getImportPreview(firm.id, importRecord.id, null);
     expect(preview.rows[0]).toEqual(["Name", "Net"]);
     expect(preview.sheetNames).toEqual([]);
+
+    const updated = await prisma.import.findUnique({
+      where: { id: importRecord.id }
+    });
+    expect(updated?.parseStatus).toBe("PARSED");
+    expect(updated?.parseSummary).toEqual(
+      expect.objectContaining({
+        previewRowCount: 2,
+        previewColumnCount: 2
+      })
+    );
+  });
+
+  it("keeps parse status when already mapped", async () => {
+    const { firm, user } = await createFirmWithUser("ADMIN");
+    const client = await createClient(
+      { firmId: firm.id, userId: user.id },
+      {
+        name: "Preview Client Mapped",
+        payrollSystem: "OTHER",
+        payrollSystemOther: "Other",
+        payrollFrequency: "MONTHLY"
+      }
+    );
+    const payRun = await createPayRun(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        clientId: client.id,
+        periodStart: new Date("2026-06-01T00:00:00Z"),
+        periodEnd: new Date("2026-06-30T00:00:00Z")
+      }
+    );
+    const importRecord = await prisma.import.create({
+      data: {
+        firmId: firm.id,
+        clientId: client.id,
+        payRunId: payRun.id,
+        sourceType: "REGISTER",
+        version: 1,
+        storageUri: `s3://${storageBucket}/uploads/file-mapped.csv`,
+        fileHashSha256: "hash-preview-mapped",
+        originalFilename: "file-mapped.csv",
+        mimeType: "text/csv",
+        sizeBytes: 120,
+        uploadedByUserId: user.id,
+        parseStatus: "READY"
+      }
+    });
+
+    vi.spyOn(
+      storageClient as unknown as { send: () => Promise<unknown> },
+      "send"
+    ).mockResolvedValue({
+      Body: Buffer.from("Name,Net\nAlex,120\n")
+    } as { Body: unknown });
+
+    const preview = await getImportPreview(firm.id, importRecord.id, null);
+    expect(preview.rows[0]).toEqual(["Name", "Net"]);
+
+    const updated = await prisma.import.findUnique({
+      where: { id: importRecord.id }
+    });
+    expect(updated?.parseStatus).toBe("READY");
+    expect(updated?.parseSummary).toEqual(
+      expect.objectContaining({
+        previewRowCount: 2,
+        previewColumnCount: 2
+      })
+    );
   });
 
   it("returns an XLSX preview", async () => {
@@ -108,7 +178,7 @@ describe("import preview", () => {
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         sizeBytes: 220,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 
@@ -122,6 +192,11 @@ describe("import preview", () => {
     const preview = await getImportPreview(firm.id, importRecord.id, null);
     expect(preview.rows[0]).toEqual(["Employee", "Net"]);
     expect(preview.sheetNames).toContain("Sheet1");
+
+    const updated = await prisma.import.findUnique({
+      where: { id: importRecord.id }
+    });
+    expect(updated?.parseStatus).toBe("PARSED");
   });
 
   it("throws for missing imports", async () => {
@@ -164,7 +239,7 @@ describe("import preview", () => {
         mimeType: "text/csv",
         sizeBytes: 120,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 
@@ -205,13 +280,62 @@ describe("import preview", () => {
         mimeType: "text/csv",
         sizeBytes: 120,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 
     await expect(
       getImportPreview(firm.id, importRecord.id, null)
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("records unknown parsing errors", async () => {
+    const { firm, user } = await createFirmWithUser("ADMIN");
+    const client = await createClient(
+      { firmId: firm.id, userId: user.id },
+      {
+        name: "Preview Client Unknown Error",
+        payrollSystem: "OTHER",
+        payrollSystemOther: "Other",
+        payrollFrequency: "MONTHLY"
+      }
+    );
+    const payRun = await createPayRun(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        clientId: client.id,
+        periodStart: new Date("2026-10-01T00:00:00Z"),
+        periodEnd: new Date("2026-10-31T00:00:00Z")
+      }
+    );
+    const importRecord = await prisma.import.create({
+      data: {
+        firmId: firm.id,
+        clientId: client.id,
+        payRunId: payRun.id,
+        sourceType: "REGISTER",
+        version: 1,
+        storageUri: `s3://${storageBucket}/uploads/file-unknown.csv`,
+        fileHashSha256: "hash-preview-unknown",
+        originalFilename: "file-unknown.csv",
+        mimeType: "text/csv",
+        sizeBytes: 120,
+        uploadedByUserId: user.id,
+        parseStatus: "UPLOADED"
+      }
+    });
+
+    vi.spyOn(importFile, "readImportFile").mockRejectedValue("boom");
+
+    await expect(
+      getImportPreview(firm.id, importRecord.id, null)
+    ).rejects.toBe("boom");
+
+    const updated = await prisma.import.findUnique({
+      where: { id: importRecord.id }
+    });
+    expect(updated?.parseStatus).toBe("ERROR");
+    expect(updated?.parseSummary).toEqual({ error: "Unable to parse file." });
   });
 
   it("rejects empty file bodies", async () => {
@@ -246,7 +370,7 @@ describe("import preview", () => {
         mimeType: "text/csv",
         sizeBytes: 10,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 
@@ -293,7 +417,7 @@ describe("import preview", () => {
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         sizeBytes: 120,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 
@@ -349,7 +473,7 @@ describe("import preview", () => {
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         sizeBytes: 120,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 
@@ -405,7 +529,7 @@ describe("import preview", () => {
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         sizeBytes: 120,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 
@@ -460,7 +584,7 @@ describe("import preview", () => {
         mimeType: "text/csv",
         sizeBytes: 120,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 
@@ -499,6 +623,11 @@ describe("import preview", () => {
       getImportPreview(firm.id, importRecord.id, null)
     ).rejects.toBeInstanceOf(ValidationError);
 
+    const updated = await prisma.import.findUnique({
+      where: { id: importRecord.id }
+    });
+    expect(updated?.parseStatus).toBe("ERROR");
+
     parseSpy.mockRestore();
   });
 
@@ -534,7 +663,7 @@ describe("import preview", () => {
         mimeType: "text/csv",
         sizeBytes: 120,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 
@@ -601,7 +730,7 @@ describe("import preview", () => {
         mimeType: "text/csv",
         sizeBytes: 120,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 
@@ -648,7 +777,7 @@ describe("import preview", () => {
         mimeType: "text/csv",
         sizeBytes: 120,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 
@@ -695,7 +824,7 @@ describe("import preview", () => {
         mimeType: "text/csv",
         sizeBytes: 120,
         uploadedByUserId: user.id,
-        parseStatus: "PENDING"
+        parseStatus: "UPLOADED"
       }
     });
 

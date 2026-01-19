@@ -34,11 +34,18 @@ Each uploaded file becomes a `SourceImport`:
 - `uploaded_at`
 - `file_hash_sha256`
 - `storage_uri`
-- `parse_status`: `PENDING | PARSED | FAILED`
+- `parse_status`: `UPLOADED | PARSING | PARSED | MAPPED | READY | ERROR`
 - `mapping_template_version_id` (nullable)
 - `normalized_dataset_id` (nullable)
 
 **Immutability:** a new file creates a new `SourceImport` row.
+
+**Validation requirements (MVP hardening):**
+- Verify file signature (magic bytes) before parsing.
+- For XLSX, confirm `xl/workbook.xml` exists.
+- For CSV, validate parseability and sane row/column counts.
+- Enforce max size + row limits (configurable).
+- Store SHA-256 for audit repeatability.
 
 ### 2.2 Normalized records (internal schema)
 Use narrow, typed schemas per source type, e.g.:
@@ -102,6 +109,10 @@ See `docs/03_pay_run_state_machine.md`. The system must enforce:
 - Pack cannot be locked until approved.
 - Locked pay run cannot be mutated; revisions are required.
 
+### 3.1 Reconciliation status (separate from import status)
+- `NOT_RUN | RUNNING | SUCCESS | FAILED`
+- Displayed separately from import statuses in UI.
+
 ## 4. Background jobs
 - `parse_import(import_id)`
 - `normalize_import(import_id, template_version_id)`
@@ -118,12 +129,12 @@ Minimum endpoints / actions:
 - Firms/users/invites/roles
 - Clients CRUD
 - Pay runs CRUD + state transitions
-- Upload import (signed upload + finalize)
+- Upload import (server proxy upload + prepare + finalize)
 - Template CRUD + apply
 - Run reconciliation
 - Exceptions CRUD (status changes, assignment)
 - Approve/reject
-- Generate/download pack
+- Generate/download pack (server endpoint)
 
 ## 6. Non-functional requirements
 See `docs/18_nfrs_observability.md` and `docs/14_security_privacy_redaction.md`.

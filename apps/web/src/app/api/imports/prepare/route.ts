@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { PermissionError, requirePermission } from "@/lib/permissions";
 import { buildStorageKey, isAllowedUpload } from "@/lib/imports";
 import { storageBucket, storageClient } from "@/lib/storage";
+import { formatBytes, importValidationLimits } from "@/lib/import-validation";
 import { prisma } from "@/lib/prisma";
 
 const prepareSchema = z.object({
@@ -36,10 +37,18 @@ export const POST = async (request: Request) => {
     return errorResponse(400, "Invalid upload request.");
   }
 
-  const { payRunId, sourceType, originalFilename, mimeType } = parsed.data;
+  const { payRunId, sourceType, originalFilename, mimeType, sizeBytes } =
+    parsed.data;
 
   if (!isAllowedUpload(originalFilename, mimeType)) {
     return errorResponse(400, "Unsupported file type.");
+  }
+
+  if (sizeBytes > importValidationLimits.maxBytes) {
+    return errorResponse(
+      400,
+      `File exceeds the ${formatBytes(importValidationLimits.maxBytes)} limit.`
+    );
   }
 
   const payRun = await prisma.payRun.findFirst({

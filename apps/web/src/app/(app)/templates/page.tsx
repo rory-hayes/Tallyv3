@@ -1,8 +1,8 @@
 import Link from "next/link";
 import type { Route } from "next";
-import { prisma, type MappingTemplateStatus, type SourceType, Prisma } from "@/lib/prisma";
+import { type MappingTemplateStatus, type SourceType } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { detectColumnDrift } from "@/lib/mapping-utils";
+import { getTemplateLibraryData } from "@/lib/templates-library";
 
 type TemplatesPageProps = {
   searchParams?: Record<string, string | string[] | undefined>;
@@ -54,99 +54,12 @@ export default async function TemplatesPage({ searchParams }: TemplatesPageProps
   const status =
     typeof searchParams?.status === "string" ? searchParams.status : "";
 
-  const templateFilter: Prisma.MappingTemplateWhereInput = {
-    firmId: session.firmId,
-    ...(query
-      ? {
-          name: {
-            contains: query,
-            mode: Prisma.QueryMode.insensitive
-          }
-        }
-      : {}),
-    ...(clientId ? { clientId } : {}),
-    ...(scope === "firm" ? { clientId: null } : {}),
-    ...(scope === "client" ? { clientId: { not: null } } : {}),
-    ...(sourceType ? { sourceType: sourceType as SourceType } : {}),
-    ...(status ? { status: status as MappingTemplateStatus } : {})
-  };
-
-  const templates = await prisma.mappingTemplate.findMany({
-    where: templateFilter,
-    include: {
-      client: true,
-      createdByUser: true
-    },
-    orderBy: [
-      { name: "asc" },
-      { sourceType: "asc" },
-      { clientId: "asc" },
-      { version: "desc" }
-    ]
-  });
-
-  const groupedTemplates = new Map<string, (typeof templates)[number][]>();
-  templates.forEach((template) => {
-    const key = `${template.clientId ?? "firm"}-${template.sourceType}-${template.name}`;
-    const existing = groupedTemplates.get(key) ?? [];
-    groupedTemplates.set(key, [...existing, template]);
-  });
-
-  const latestTemplates = Array.from(groupedTemplates.values())
-    .map((versions) => versions[0])
-    .filter(
-      (template): template is (typeof templates)[number] => template !== undefined
-    );
-
-  const driftByTemplateId = new Map<string, string>();
-  for (const versions of groupedTemplates.values()) {
-    const latest = versions[0];
-    const previous = versions[1];
-    if (!latest) {
-      continue;
-    }
-    if (!previous) {
-      driftByTemplateId.set(latest.id, "New");
-      continue;
-    }
-    const previousColumns = Array.isArray(previous.sourceColumns)
-      ? (previous.sourceColumns as string[])
-      : [];
-    const latestColumns = Array.isArray(latest.sourceColumns)
-      ? (latest.sourceColumns as string[])
-      : [];
-    const drift = detectColumnDrift(previousColumns, latestColumns);
-    driftByTemplateId.set(latest.id, drift.drifted ? "Changed" : "Stable");
-  }
-
-  const templateIds = latestTemplates.map((template) => template.id);
-  const usage = templateIds.length
-    ? await prisma.import.findMany({
-        where: {
-          firmId: session.firmId,
-          mappingTemplateVersionId: { in: templateIds }
-        },
-        select: {
-          mappingTemplateVersionId: true,
-          uploadedAt: true
-        },
-        orderBy: [{ uploadedAt: "desc" }]
-      })
-    : [];
-
-  const lastUsedMap = new Map<string, Date>();
-  for (const entry of usage) {
-    if (!entry.mappingTemplateVersionId) {
-      continue;
-    }
-    if (!lastUsedMap.has(entry.mappingTemplateVersionId)) {
-      lastUsedMap.set(entry.mappingTemplateVersionId, entry.uploadedAt);
-    }
-  }
-
-  const clients = await prisma.client.findMany({
-    where: { firmId: session.firmId },
-    orderBy: { name: "asc" }
+  const { templates, clients } = await getTemplateLibraryData(session.firmId, {
+    query,
+    clientId,
+    scope: scope as "firm" | "client" | "",
+    sourceType: sourceType ? (sourceType as SourceType) : "",
+    status: status ? (status as MappingTemplateStatus) : ""
   });
 
   return (
@@ -254,6 +167,7 @@ export default async function TemplatesPage({ searchParams }: TemplatesPageProps
               <th className="px-4 py-3">Scope</th>
               <th className="px-4 py-3">Source</th>
               <th className="px-4 py-3">Version</th>
+              <th className="px-4 py-3">Created</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Last used</th>
               <th className="px-4 py-3">Drift</th>
@@ -261,15 +175,15 @@ export default async function TemplatesPage({ searchParams }: TemplatesPageProps
             </tr>
           </thead>
           <tbody>
-            {latestTemplates.length === 0 ? (
+            {templates.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-6 text-sm text-slate">
+                <td colSpan={9} className="px-4 py-6 text-sm text-slate">
                   No templates match these filters.
                 </td>
               </tr>
             ) : (
-              latestTemplates.map((template) => {
-                const lastUsed = lastUsedMap.get(template.id);
+              templates.map((entry) => {
+                const { template, drift, lastUsed } = entry;
                 return (
                   <tr key={template.id} className="border-b border-slate/10">
                     <td className="px-4 py-3 font-semibold text-ink">
@@ -283,6 +197,9 @@ export default async function TemplatesPage({ searchParams }: TemplatesPageProps
                     </td>
                     <td className="px-4 py-3 text-slate">v{template.version}</td>
                     <td className="px-4 py-3 text-slate">
+                      {template.createdAt.toLocaleDateString("en-GB")}
+                    </td>
+                    <td className="px-4 py-3 text-slate">
                       {statusLabels[template.status]}
                     </td>
                     <td className="px-4 py-3 text-slate">
@@ -291,7 +208,7 @@ export default async function TemplatesPage({ searchParams }: TemplatesPageProps
                         : "Not used"}
                     </td>
                     <td className="px-4 py-3 text-slate">
-                      {driftByTemplateId.get(template.id) ?? "Unknown"}
+                      {drift}
                     </td>
                     <td className="px-4 py-3">
                       <Link

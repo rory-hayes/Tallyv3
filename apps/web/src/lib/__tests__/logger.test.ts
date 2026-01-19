@@ -46,6 +46,17 @@ describe("logger", () => {
     expect(payload.extra).toBeUndefined();
   });
 
+  it("drops unsupported context value types", () => {
+    logInfo("TEST_EVENT", {
+      firmId: "firm-1",
+      // @ts-expect-error - object values should be ignored.
+      status: { ok: true }
+    });
+
+    const payload = JSON.parse(String(stdoutSpy?.mock.calls[0]?.[0]));
+    expect(payload.status).toBeUndefined();
+  });
+
   it("handles empty context payloads", () => {
     logInfo("EMPTY_CONTEXT");
     expect(stdoutSpy).toHaveBeenCalledTimes(1);
@@ -115,6 +126,38 @@ describe("logger", () => {
         { attempts: 1, delayMs: 0, event: "UPLOAD", context: { firmId: "firm-1" } }
       )
     ).rejects.toBeInstanceOf(Error);
+    expect(stderrSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses default retry settings when omitted", async () => {
+    const result = await withRetry(
+      async () => "ok",
+      { event: "UPLOAD", context: { firmId: "firm-1" } }
+    );
+
+    expect(result).toBe("ok");
+  });
+
+  it("skips retries when shouldRetry returns false", async () => {
+    let attempts = 0;
+
+    await expect(
+      withRetry(
+        async () => {
+          attempts += 1;
+          throw new Error("validation");
+        },
+        {
+          attempts: 3,
+          delayMs: 0,
+          event: "UPLOAD",
+          context: { firmId: "firm-1" },
+          shouldRetry: () => false
+        }
+      )
+    ).rejects.toBeInstanceOf(Error);
+
+    expect(attempts).toBe(1);
     expect(stderrSpy).toHaveBeenCalledTimes(1);
   });
 });

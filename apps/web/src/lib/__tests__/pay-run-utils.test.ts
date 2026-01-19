@@ -16,6 +16,14 @@ describe("pay run utils", () => {
     expect(() => parseDateInput("2026-00-01")).toThrow(ValidationError);
   });
 
+  it("rejects invalid calendar dates", () => {
+    expect(() => parseDateInput("2026-02-30")).toThrow(ValidationError);
+  });
+
+  it("rejects non-ISO date formats", () => {
+    expect(() => parseDateInput("2026-1-05")).toThrow(ValidationError);
+  });
+
   it("formats a period label", () => {
     const start = new Date(Date.UTC(2026, 0, 1));
     const end = new Date(Date.UTC(2026, 0, 31));

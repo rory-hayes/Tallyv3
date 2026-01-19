@@ -89,7 +89,13 @@ export const readImportFile = async (
   const lowerName = importRecord.originalFilename.toLowerCase();
   const { sheetName, maxRows } = options;
 
-  if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+  if (lowerName.endsWith(".xls")) {
+    throw new ValidationError(
+      "Legacy .xls files are not supported. Export as CSV or XLSX."
+    );
+  }
+
+  if (lowerName.endsWith(".xlsx")) {
     const workbook = XLSX.read(buffer, { type: "buffer" });
     const sheetNames = workbook.SheetNames;
     if (sheetNames.length === 0) {

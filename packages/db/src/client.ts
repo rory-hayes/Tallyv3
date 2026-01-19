@@ -1,9 +1,10 @@
+import fs from "fs";
+import path from "path";
+
 // CRITICAL: Set up Prisma engine path BEFORE importing PrismaClient
 // This must run at module load time, before PrismaClient is instantiated
 if (process.env.NODE_ENV === "production" && !process.env.PRISMA_QUERY_ENGINE_LIBRARY) {
   try {
-    const path = require("path");
-    const fs = require("fs");
 
     const engineFile = "libquery_engine-rhel-openssl-3.0.x.so.node";
     const possiblePaths: string[] = [];

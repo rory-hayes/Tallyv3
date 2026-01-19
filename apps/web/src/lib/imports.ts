@@ -32,7 +32,7 @@ export type ImportCreateResult = {
   duplicate: boolean;
 };
 
-const allowedExtensions = [".csv", ".xlsx", ".xls"];
+const allowedExtensions = [".csv", ".xlsx"];
 const allowedMimeTypes = [
   "text/csv",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -156,7 +156,7 @@ export const createImport = async (
         mimeType: input.mimeType,
         sizeBytes: input.sizeBytes,
         uploadedByUserId: context.userId,
-        parseStatus: "PENDING" as ImportParseStatus
+        parseStatus: "UPLOADED" as ImportParseStatus
       }
     });
   } catch (error) {

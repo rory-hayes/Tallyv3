@@ -1,9 +1,16 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { getPackDownloadUrl } from "@/lib/packs";
 
 type PacksPageProps = {
   searchParams?: Record<string, string | string[] | undefined>;
+};
+
+const badgeBase =
+  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide";
+
+const lockBadgeClasses = {
+  locked: "bg-emerald-100 text-emerald-700",
+  unlocked: "bg-amber-100 text-amber-700"
 };
 
 const parseDate = (value?: string, endOfDay = false) => {
@@ -58,17 +65,15 @@ export default async function PacksPage({ searchParams }: PacksPageProps) {
     orderBy: { name: "asc" }
   });
 
-  const packRows = await Promise.all(
-    packs.map(async (pack) => ({
-      id: pack.id,
-      clientName: pack.payRun.client.name,
-      periodLabel: pack.payRun.periodLabel,
-      packVersion: pack.packVersion,
-      generatedAt: pack.generatedAt,
-      lockedAt: pack.lockedAt,
-      downloadUrl: await getPackDownloadUrl(pack)
-    }))
-  );
+  const packRows = packs.map((pack) => ({
+    id: pack.id,
+    clientName: pack.payRun.client.name,
+    periodLabel: pack.payRun.periodLabel,
+    packVersion: pack.packVersion,
+    generatedAt: pack.generatedAt,
+    lockedAt: pack.lockedAt,
+    downloadUrl: `/packs/${pack.id}/download`
+  }));
 
   return (
     <div className="space-y-6">
@@ -177,12 +182,23 @@ export default async function PacksPage({ searchParams }: PacksPageProps) {
                     })}
                   </td>
                   <td className="px-4 py-3 text-slate">
-                    {pack.lockedAt
-                      ? pack.lockedAt.toLocaleString("en-GB", {
-                          dateStyle: "medium",
-                          timeStyle: "short"
-                        })
-                      : "Not locked"}
+                    {pack.lockedAt ? (
+                      <div className="flex flex-col gap-1">
+                        <span className={`${badgeBase} ${lockBadgeClasses.locked}`}>
+                          Locked
+                        </span>
+                        <span className="text-xs text-slate">
+                          {pack.lockedAt.toLocaleString("en-GB", {
+                            dateStyle: "medium",
+                            timeStyle: "short"
+                          })}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className={`${badgeBase} ${lockBadgeClasses.unlocked}`}>
+                        Unlocked
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <a

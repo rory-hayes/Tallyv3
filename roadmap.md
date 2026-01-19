@@ -92,6 +92,17 @@
 
 **Exit criteria:** pilot-ready MVP.
 
+### Hardening Sprint — Production readiness (insert after Sprint 3)
+**Outcome:** core flows are resilient and auditable before expanding checks.
+- Strict file validation (magic bytes + parseability)
+- Import pipeline status semantics (UPLOADED → PARSING → PARSED → MAPPED → READY/ERROR)
+- Exceptions routes + empty states
+- Pack downloads via secure server endpoint
+- Tests/CI enforcement and golden-path coverage
+- Date validation + UX fixes for mapping/navigation
+
+**Exit criteria:** uploads, mapping, exceptions, and packs are reliable with clear status and errors.
+
 ### Sprint 9 — Dashboard + Templates Library
 **Epics:** E13, E14
 - Dashboard operational overview (counts, alerts, next steps)

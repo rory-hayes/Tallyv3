@@ -39,6 +39,18 @@ describe("reconciliation run", () => {
     vi.restoreAllMocks();
   });
 
+  const createParsedImport = async (
+    context: Parameters<typeof createImport>[0],
+    input: Parameters<typeof createImport>[1]
+  ) => {
+    const result = await createImport(context, input);
+    await prisma.import.update({
+      where: { id: result.importRecord.id },
+      data: { parseStatus: "PARSED" }
+    });
+    return result;
+  };
+
   const setupPayRun = async ({
     region = "UK",
     glMode = "signed"
@@ -84,7 +96,7 @@ describe("reconciliation run", () => {
       "gl.csv"
     );
 
-    const registerImport = await createImport(
+    const registerImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: user.role },
       {
         payRunId: payRun.id,
@@ -96,7 +108,7 @@ describe("reconciliation run", () => {
         sizeBytes: 120
       }
     );
-    const bankImport = await createImport(
+    const bankImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: user.role },
       {
         payRunId: payRun.id,
@@ -108,7 +120,7 @@ describe("reconciliation run", () => {
         sizeBytes: 120
       }
     );
-    const glImport = await createImport(
+    const glImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: user.role },
       {
         payRunId: payRun.id,
@@ -585,7 +597,7 @@ describe("reconciliation run", () => {
       "REGISTER",
       "register.csv"
     );
-    const registerImport = await createImport(
+    const registerImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: user.role },
       {
         payRunId: payRun.id,
@@ -659,7 +671,7 @@ describe("reconciliation run", () => {
       "gl.csv"
     );
 
-    const registerImport = await createImport(
+    const registerImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: user.role },
       {
         payRunId: payRun.id,
@@ -671,7 +683,7 @@ describe("reconciliation run", () => {
         sizeBytes: 120
       }
     );
-    await createImport(
+    await createParsedImport(
       { firmId: firm.id, userId: user.id, role: user.role },
       {
         payRunId: payRun.id,
@@ -683,7 +695,7 @@ describe("reconciliation run", () => {
         sizeBytes: 120
       }
     );
-    const glImport = await createImport(
+    const glImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: user.role },
       {
         payRunId: payRun.id,

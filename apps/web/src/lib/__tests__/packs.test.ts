@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma, type Pack } from "@/lib/prisma";
 import { createClient } from "@/lib/clients";
@@ -204,6 +205,93 @@ describe("pack generation and locking", () => {
     expect(event).not.toBeNull();
   });
 
+  it("generates packs when input summaries are missing", async () => {
+    const { firm, user } = await createFirmWithUser("ADMIN");
+    const client = await createClient(
+      { firmId: firm.id, userId: user.id },
+      {
+        name: "Pack Client Missing Summary",
+        payrollSystem: "BRIGHTPAY",
+        payrollFrequency: "MONTHLY"
+      }
+    );
+    const payRun = await createPayRun(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        clientId: client.id,
+        periodStart: new Date("2027-08-01T00:00:00Z"),
+        periodEnd: new Date("2027-08-31T00:00:00Z")
+      }
+    );
+
+    await createImport(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        payRunId: payRun.id,
+        sourceType: "REGISTER",
+        storageKey: buildStorageKey(firm.id, payRun.id, "REGISTER", "register.csv"),
+        fileHashSha256: "hash-register",
+        originalFilename: "register.csv",
+        mimeType: "text/csv",
+        sizeBytes: 120
+      }
+    );
+    await createImport(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        payRunId: payRun.id,
+        sourceType: "BANK",
+        storageKey: buildStorageKey(firm.id, payRun.id, "BANK", "bank.csv"),
+        fileHashSha256: "hash-bank",
+        originalFilename: "bank.csv",
+        mimeType: "text/csv",
+        sizeBytes: 120
+      }
+    );
+    await createImport(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        payRunId: payRun.id,
+        sourceType: "GL",
+        storageKey: buildStorageKey(firm.id, payRun.id, "GL", "gl.csv"),
+        fileHashSha256: "hash-gl",
+        originalFilename: "gl.csv",
+        mimeType: "text/csv",
+        sizeBytes: 120
+      }
+    );
+
+    await prisma.reconciliationRun.create({
+      data: {
+        firmId: firm.id,
+        payRunId: payRun.id,
+        runNumber: 1,
+        bundleId: "BUNDLE_UK_V1",
+        bundleVersion: "v1",
+        status: "SUCCESS",
+        inputSummary: Prisma.JsonNull,
+        executedByUserId: user.id
+      }
+    });
+
+    await prisma.payRun.update({
+      where: { id: payRun.id },
+      data: { status: "APPROVED" }
+    });
+
+    const sendSpy = vi
+      .spyOn(storageClient as unknown as { send: () => Promise<unknown> }, "send")
+      .mockResolvedValueOnce({});
+
+    const pack = await generatePack(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id
+    );
+
+    expect(pack.packVersion).toBe(1);
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("stores redaction settings in pack metadata", async () => {
     const { firm, user, payRun } = await seedApprovedPayRun();
     await prisma.firm.update({
@@ -238,6 +326,87 @@ describe("pack generation and locking", () => {
         maskNiNumbers: false
       }
     });
+  });
+
+  it("applies redaction settings to pack output", async () => {
+    const { firm, user, payRun } = await seedApprovedPayRun();
+    await prisma.firm.update({
+      where: { id: firm.id },
+      data: {
+        defaults: {
+          redaction: {
+            maskEmployeeNames: true,
+            maskBankDetails: true,
+            maskNiNumbers: true
+          }
+        }
+      }
+    });
+
+    const run = await prisma.reconciliationRun.findFirst({
+      where: { payRunId: payRun.id }
+    });
+    expect(run).not.toBeNull();
+
+    const checkResult = await prisma.checkResult.create({
+      data: {
+        reconciliationRunId: run!.id,
+        checkType: "CHK_REGISTER_NET_TO_BANK_TOTAL",
+        checkVersion: "v1",
+        status: "FAIL",
+        severity: "HIGH",
+        summary: "Mismatch",
+        details: {
+          leftLabel: "Register net total",
+          rightLabel: "Bank total",
+          leftValue: 1200,
+          rightValue: 1100,
+          deltaValue: 100,
+          deltaPercent: 8.3,
+          formula: "Register - Bank",
+          toleranceApplied: { absolute: 1, percent: 0.1, applied: 1 }
+        }
+      }
+    });
+
+    await prisma.exception.create({
+      data: {
+        firmId: firm.id,
+        payRunId: payRun.id,
+        reconciliationRunId: run!.id,
+        checkResultId: checkResult.id,
+        category: "BANK_MISMATCH",
+        severity: "HIGH",
+        status: "OPEN",
+        title: "Employee John Smith NI AB123456C bank account 12345678",
+        description: "Details in evidence."
+      }
+    });
+
+    let capturedBody: Buffer | null = null;
+    vi.spyOn(storageClient as unknown as { send: (command: unknown) => Promise<unknown> }, "send")
+      .mockImplementationOnce(async (command: unknown) => {
+        const body = (command as { input?: { Body?: unknown } }).input?.Body;
+        if (Buffer.isBuffer(body)) {
+          capturedBody = body;
+        } else if (body instanceof Uint8Array) {
+          capturedBody = Buffer.from(body);
+        } else if (typeof body === "string") {
+          capturedBody = Buffer.from(body);
+        }
+        return {};
+      });
+
+    await generatePack(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id
+    );
+
+    const pdfText = capturedBody ? Buffer.from(capturedBody).toString("utf8") : "";
+    expect(pdfText).toContain("Employee J*** S**** NI *******6C bank account ****5678");
+    expect(pdfText).not.toContain("John Smith");
+    expect(pdfText).not.toContain("AB123456C");
+    expect(pdfText).not.toContain("12345678");
   });
 
   it("records failures when pack uploads fail", async () => {

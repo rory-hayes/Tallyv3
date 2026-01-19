@@ -56,6 +56,14 @@ const ensureImportForMapping = async (firmId: string, importId: string) => {
     throw new ValidationError("Locked pay runs cannot accept template changes.");
   }
 
+  if (importRecord.parseStatus === "ERROR") {
+    throw new ValidationError("This import failed validation. Re-upload the file.");
+  }
+
+  if (importRecord.parseStatus === "UPLOADED" || importRecord.parseStatus === "PARSING") {
+    throw new ValidationError("Parse the import before applying a mapping template.");
+  }
+
   return importRecord;
 };
 
@@ -239,6 +247,53 @@ const maybeTransitionToMapped = async (context: ActorContext, payRunId: string) 
   }
 };
 
+const markImportMapped = async (importId: string) => {
+  await prisma.import.update({
+    where: { id: importId },
+    data: { parseStatus: "MAPPED" }
+  });
+};
+
+const maybeTransitionImportsReady = async (context: ActorContext, payRunId: string) => {
+  const imports = await prisma.import.findMany({
+    where: {
+      payRunId,
+      firmId: context.firmId,
+      sourceType: { in: requiredSources }
+    },
+    orderBy: [{ sourceType: "asc" }, { version: "desc" }]
+  });
+
+  const latestBySource = new Map<SourceType, typeof imports[number]>();
+  for (const entry of imports) {
+    if (!latestBySource.has(entry.sourceType)) {
+      latestBySource.set(entry.sourceType, entry);
+    }
+  }
+
+  const latestImports = requiredSources
+    .map((source) => latestBySource.get(source))
+    .filter(Boolean);
+
+  const allReady = latestImports.every(
+    (entry) =>
+      entry &&
+      entry.mappingTemplateVersionId &&
+      entry.parseStatus !== "ERROR"
+  );
+
+  if (!allReady) {
+    return;
+  }
+
+  await prisma.import.updateMany({
+    where: {
+      id: { in: latestImports.map((entry) => entry!.id) }
+    },
+    data: { parseStatus: "READY" }
+  });
+};
+
 export const applyMappingTemplate = async (
   context: ActorContext,
   input: ApplyTemplateInput
@@ -290,7 +345,9 @@ export const applyMappingTemplate = async (
         where: { id: importRecord.id },
         data: { mappingTemplateVersionId: template.id }
       });
+      await markImportMapped(importRecord.id);
       await maybeTransitionToMapped(context, importRecord.payRunId);
+      await maybeTransitionImportsReady(context, importRecord.payRunId);
       return {
         templateId: template.id,
         version: template.version,
@@ -317,8 +374,10 @@ export const applyMappingTemplate = async (
       where: { id: importRecord.id },
       data: { mappingTemplateVersionId: created.id }
     });
+    await markImportMapped(importRecord.id);
 
     await maybeTransitionToMapped(context, importRecord.payRunId);
+    await maybeTransitionImportsReady(context, importRecord.payRunId);
     return {
       templateId: created.id,
       version: created.version,
@@ -348,8 +407,10 @@ export const applyMappingTemplate = async (
     where: { id: importRecord.id },
     data: { mappingTemplateVersionId: created.id }
   });
+  await markImportMapped(importRecord.id);
 
   await maybeTransitionToMapped(context, importRecord.payRunId);
+  await maybeTransitionImportsReady(context, importRecord.payRunId);
   return {
     templateId: created.id,
     version: created.version,

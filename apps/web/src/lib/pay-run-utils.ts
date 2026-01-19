@@ -5,12 +5,29 @@ export const parseDateInput = (value: string): Date => {
     throw new ValidationError("Missing date.");
   }
 
-  const [year, month, day] = value.split("-").map(Number);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    throw new ValidationError("Invalid date.");
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
   if (!year || !month || !day) {
     throw new ValidationError("Invalid date.");
   }
 
-  return new Date(Date.UTC(year, month - 1, day));
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new ValidationError("Invalid date.");
+  }
+
+  return parsed;
 };
 
 const dateFormatter = new Intl.DateTimeFormat("en-GB", {

@@ -67,9 +67,12 @@ enum SourceType {
 }
 
 enum ImportParseStatus {
-  PENDING
+  UPLOADED
+  PARSING
   PARSED
-  FAILED
+  MAPPED
+  READY
+  ERROR
 }
 
 enum MappingTemplateStatus {
@@ -79,6 +82,7 @@ enum MappingTemplateStatus {
 }
 
 enum ReconciliationStatus {
+  RUNNING
   SUCCESS
   FAILED
 }
@@ -291,7 +295,7 @@ model Import {
   uploadedByUserId       String            @db.Uuid
   uploadedByUser         User              @relation(fields: [uploadedByUserId], references: [id])
   uploadedAt             DateTime          @default(now())
-  parseStatus            ImportParseStatus @default(PENDING)
+  parseStatus            ImportParseStatus @default(UPLOADED)
   mappingTemplateVersionId String?         @db.Uuid
   mappingTemplateVersion   MappingTemplate? @relation(fields: [mappingTemplateVersionId], references: [id])
   normalizedDatasetId    String?           @db.Uuid

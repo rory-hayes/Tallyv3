@@ -16,6 +16,7 @@ type LogContext = {
   durationMs?: number;
   packVersion?: number;
   errorName?: string;
+  errorCode?: string;
 };
 
 const allowedKeys = new Set<keyof LogContext>([
@@ -31,7 +32,8 @@ const allowedKeys = new Set<keyof LogContext>([
   "attempt",
   "durationMs",
   "packVersion",
-  "errorName"
+  "errorName",
+  "errorCode"
 ]);
 
 const sanitizeContext = (context?: LogContext): Record<string, string | number | boolean> => {
@@ -110,10 +112,12 @@ export const withRetry = async <T>(
     delayMs?: number;
     event: string;
     context?: LogContext;
+    shouldRetry?: (error: unknown) => boolean;
   }
 ): Promise<T> => {
   const attempts = options.attempts ?? 3;
   const delayMs = options.delayMs ?? 200;
+  const shouldRetry = options.shouldRetry ?? (() => true);
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -123,6 +127,15 @@ export const withRetry = async <T>(
       });
       return await operation();
     } catch (error) {
+      if (!shouldRetry(error)) {
+        logError(`${options.event}_FAILED`, {
+          ...options.context,
+          attempt,
+          errorName: formatErrorName(error)
+        });
+        throw error;
+      }
+
       const isLast = attempt === attempts;
       const log = isLast ? logError : logWarn;
       log(`${options.event}_FAILED`, {

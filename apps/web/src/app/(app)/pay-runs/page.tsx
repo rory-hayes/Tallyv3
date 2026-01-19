@@ -7,19 +7,43 @@ type PayRunsPageProps = {
   searchParams?: Record<string, string | string[] | undefined>;
 };
 
-const statusOptions: Array<{ value: PayRunStatus; label: string }> = [
-  { value: "DRAFT", label: "Draft" },
-  { value: "IMPORTED", label: "Imported" },
-  { value: "MAPPED", label: "Mapped" },
-  { value: "RECONCILING", label: "Reconciling" },
-  { value: "RECONCILED", label: "Reconciled" },
-  { value: "EXCEPTIONS_OPEN", label: "Exceptions open" },
-  { value: "READY_FOR_REVIEW", label: "Ready for review" },
-  { value: "APPROVED", label: "Approved" },
-  { value: "PACKED", label: "Packed" },
-  { value: "LOCKED", label: "Locked" },
-  { value: "ARCHIVED", label: "Archived" }
-];
+const badgeBase =
+  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide";
+
+const statusLabels: Record<PayRunStatus, string> = {
+  DRAFT: "Draft",
+  IMPORTED: "Imported",
+  MAPPED: "Mapped",
+  RECONCILING: "Reconciling",
+  RECONCILED: "Reconciled",
+  EXCEPTIONS_OPEN: "Exceptions open",
+  READY_FOR_REVIEW: "Ready for review",
+  APPROVED: "Approved",
+  PACKED: "Packed",
+  LOCKED: "Locked",
+  ARCHIVED: "Archived"
+};
+
+const statusOptions: Array<{ value: PayRunStatus; label: string }> = (
+  Object.entries(statusLabels) as Array<[PayRunStatus, string]>
+).map(([value, label]) => ({
+  value,
+  label
+}));
+
+const statusBadgeClasses: Record<PayRunStatus, string> = {
+  DRAFT: "bg-slate-100 text-slate-700",
+  IMPORTED: "bg-sky-100 text-sky-700",
+  MAPPED: "bg-blue-100 text-blue-700",
+  RECONCILING: "bg-amber-100 text-amber-700",
+  RECONCILED: "bg-emerald-100 text-emerald-700",
+  EXCEPTIONS_OPEN: "bg-rose-100 text-rose-700",
+  READY_FOR_REVIEW: "bg-cyan-100 text-cyan-700",
+  APPROVED: "bg-emerald-100 text-emerald-700",
+  PACKED: "bg-sky-100 text-sky-700",
+  LOCKED: "bg-slate-200 text-slate-700",
+  ARCHIVED: "bg-slate-100 text-slate-500"
+};
 
 export default async function PayRunsPage({ searchParams }: PayRunsPageProps) {
   const { session } = await requireUser();
@@ -173,7 +197,11 @@ export default async function PayRunsPage({ searchParams }: PayRunsPageProps) {
                   </td>
                   <td className="px-4 py-3 text-slate">{payRun.periodLabel}</td>
                   <td className="px-4 py-3 text-slate">#{payRun.revision}</td>
-                  <td className="px-4 py-3 text-slate">{payRun.status}</td>
+                  <td className="px-4 py-3">
+                    <span className={`${badgeBase} ${statusBadgeClasses[payRun.status]}`}>
+                      {statusLabels[payRun.status]}
+                    </span>
+                  </td>
                   <td className="px-4 py-3">
                     <Link
                       href={`/pay-runs/${payRun.id}` as Route}

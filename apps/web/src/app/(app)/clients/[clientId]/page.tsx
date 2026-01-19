@@ -1,9 +1,8 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { notFound } from "next/navigation";
-import { prisma, type PayrollSystem } from "@/lib/prisma";
+import { prisma, type PayrollSystem, type PayRunStatus } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { getPackDownloadUrl } from "@/lib/packs";
 
 type ClientDetailPageProps = {
   params: { clientId: string };
@@ -47,20 +46,55 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
     take: 5
   });
 
-  const packRows = await Promise.all(
-    packs.map(async (pack) => ({
-      id: pack.id,
-      periodLabel: pack.payRun.periodLabel,
-      packVersion: pack.packVersion,
-      generatedAt: pack.generatedAt,
-      downloadUrl: await getPackDownloadUrl(pack)
-    }))
-  );
+  const packRows = packs.map((pack) => ({
+    id: pack.id,
+    periodLabel: pack.payRun.periodLabel,
+    packVersion: pack.packVersion,
+    generatedAt: pack.generatedAt,
+    lockedAt: pack.lockedAt,
+    downloadUrl: `/packs/${pack.id}/download`
+  }));
+
+  const badgeBase =
+    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide";
 
   const payrollSystemLabels: Record<PayrollSystem, string> = {
     BRIGHTPAY: "BrightPay",
     STAFFOLOGY: "Staffology",
     OTHER: "Other"
+  };
+
+  const statusLabels: Record<PayRunStatus, string> = {
+    DRAFT: "Draft",
+    IMPORTED: "Imported",
+    MAPPED: "Mapped",
+    RECONCILING: "Reconciling",
+    RECONCILED: "Reconciled",
+    EXCEPTIONS_OPEN: "Exceptions open",
+    READY_FOR_REVIEW: "Ready for review",
+    APPROVED: "Approved",
+    PACKED: "Packed",
+    LOCKED: "Locked",
+    ARCHIVED: "Archived"
+  };
+
+  const statusBadgeClasses: Record<PayRunStatus, string> = {
+    DRAFT: "bg-slate-100 text-slate-700",
+    IMPORTED: "bg-sky-100 text-sky-700",
+    MAPPED: "bg-blue-100 text-blue-700",
+    RECONCILING: "bg-amber-100 text-amber-700",
+    RECONCILED: "bg-emerald-100 text-emerald-700",
+    EXCEPTIONS_OPEN: "bg-rose-100 text-rose-700",
+    READY_FOR_REVIEW: "bg-cyan-100 text-cyan-700",
+    APPROVED: "bg-emerald-100 text-emerald-700",
+    PACKED: "bg-sky-100 text-sky-700",
+    LOCKED: "bg-slate-200 text-slate-700",
+    ARCHIVED: "bg-slate-100 text-slate-500"
+  };
+
+  const lockBadgeClasses = {
+    locked: "bg-emerald-100 text-emerald-700",
+    unlocked: "bg-amber-100 text-amber-700"
   };
 
   return (
@@ -138,9 +172,14 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
                 <li key={payRun.id} className="flex items-center justify-between py-3">
                   <div>
                     <p className="text-sm font-semibold text-ink">{payRun.periodLabel}</p>
-                    <p className="text-xs text-slate">
-                      Revision {payRun.revision} · {payRun.status}
-                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate">
+                      <span>Revision {payRun.revision}</span>
+                      <span
+                        className={`${badgeBase} ${statusBadgeClasses[payRun.status]}`}
+                      >
+                        {statusLabels[payRun.status]}
+                      </span>
+                    </div>
                   </div>
                   <Link
                     href={`/pay-runs/${payRun.id}` as Route}
@@ -185,6 +224,25 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
                         timeStyle: "short"
                       })}
                     </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate">
+                      <span
+                        className={`${badgeBase} ${
+                          pack.lockedAt
+                            ? lockBadgeClasses.locked
+                            : lockBadgeClasses.unlocked
+                        }`}
+                      >
+                        {pack.lockedAt ? "Locked" : "Unlocked"}
+                      </span>
+                      {pack.lockedAt ? (
+                        <span>
+                          {pack.lockedAt.toLocaleString("en-GB", {
+                            dateStyle: "medium",
+                            timeStyle: "short"
+                          })}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                   <a
                     href={pack.downloadUrl}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SourceType } from "@/lib/prisma";
 import { sha256Hex } from "@/lib/hash";
+import { resolveUploadStrategy } from "@/lib/upload-strategy";
 
 type ImportUploaderProps = {
   payRunId: string;
@@ -40,6 +41,7 @@ export const ImportUploader = ({ payRunId, sourceType, disabled }: ImportUploade
     setUploading(true);
 
     try {
+      const mimeType = file.type || "application/octet-stream";
       const buffer = await file.arrayBuffer();
       const hash = await sha256Hex(buffer);
 
@@ -50,7 +52,7 @@ export const ImportUploader = ({ payRunId, sourceType, disabled }: ImportUploade
           payRunId,
           sourceType,
           originalFilename: file.name,
-          mimeType: file.type || "application/octet-stream",
+          mimeType,
           sizeBytes: file.size
         })
       });
@@ -60,22 +62,41 @@ export const ImportUploader = ({ payRunId, sourceType, disabled }: ImportUploade
         throw new Error(prepareBody.error || "Unable to prepare upload.");
       }
 
-      const uploadForm = new FormData();
-      uploadForm.append("file", file);
-      uploadForm.append("payRunId", payRunId);
-      uploadForm.append("sourceType", sourceType);
-      uploadForm.append("storageKey", prepareBody.storageKey);
-      uploadForm.append("originalFilename", file.name);
-      uploadForm.append("mimeType", file.type || "application/octet-stream");
-
-      const uploadResponse = await fetch("/api/imports/upload", {
-        method: "POST",
-        body: uploadForm
+      const strategy = resolveUploadStrategy({
+        mode: process.env.NEXT_PUBLIC_UPLOAD_MODE,
+        hasSignedUrl: Boolean(prepareBody.uploadUrl)
       });
 
-      if (!uploadResponse.ok) {
-        const uploadBody = await uploadResponse.json().catch(() => ({}));
-        throw new Error(uploadBody.error || "Upload failed. Please try again.");
+      if (strategy === "direct") {
+        const uploadResponse = await fetch(prepareBody.uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": mimeType
+          },
+          body: file
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error("Direct upload failed. Please retry.");
+        }
+      } else {
+        const uploadForm = new FormData();
+        uploadForm.append("file", file);
+        uploadForm.append("payRunId", payRunId);
+        uploadForm.append("sourceType", sourceType);
+        uploadForm.append("storageKey", prepareBody.storageKey);
+        uploadForm.append("originalFilename", file.name);
+        uploadForm.append("mimeType", mimeType);
+
+        const uploadResponse = await fetch("/api/imports/upload", {
+          method: "POST",
+          body: uploadForm
+        });
+
+        if (!uploadResponse.ok) {
+          const uploadBody = await uploadResponse.json().catch(() => ({}));
+          throw new Error(uploadBody.error || "Upload failed. Please try again.");
+        }
       }
 
       const finalizeResponse = await fetch("/api/imports/finalize", {
@@ -87,7 +108,7 @@ export const ImportUploader = ({ payRunId, sourceType, disabled }: ImportUploade
           storageKey: prepareBody.storageKey,
           fileHashSha256: hash,
           originalFilename: file.name,
-          mimeType: file.type || "application/octet-stream",
+          mimeType,
           sizeBytes: file.size
         })
       });

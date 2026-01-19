@@ -8,7 +8,7 @@ import {
 import { recordAuditEvent } from "./audit";
 import { ValidationError, NotFoundError } from "./errors";
 import { readImportFile } from "./import-file";
-import { startSpan } from "./logger";
+import { startSpan, withRetry } from "./logger";
 import { type ColumnMap, normalizeColumnName } from "./mapping-utils";
 import { requirePermission } from "./permissions";
 import { assertPayRunTransition } from "./pay-run-state";
@@ -88,12 +88,24 @@ const getBundleConfig = (region: "UK" | "IE"): BundleConfig => {
 };
 
 const buildParsedImport = async (
-  importRecord: { storageUri: string; originalFilename: string },
-  template: MappingTemplate
+  importRecord: { id: string; storageUri: string; originalFilename: string },
+  template: MappingTemplate,
+  context: { firmId: string }
 ): Promise<ParsedImport> => {
-  const { rows } = await readImportFile(importRecord, {
-    sheetName: template.sheetName ?? null
-  });
+  const { rows } = await withRetry(
+    () =>
+      readImportFile(importRecord, {
+        sheetName: template.sheetName ?? null
+      }),
+    {
+      event: "RECONCILIATION_IMPORT_READ",
+      context: {
+        firmId: context.firmId,
+        importId: importRecord.id
+      },
+      shouldRetry: (error) => !(error instanceof ValidationError)
+    }
+  );
   const headerRowIndex = template.headerRowIndex ?? 0;
   if (rows.length === 0 || headerRowIndex >= rows.length) {
     throw new ValidationError("Unable to locate the header row for this import.");
@@ -252,6 +264,12 @@ const ensureMappedImport = (
   if (!entry) {
     throw new ValidationError(`Missing ${source} import for reconciliation.`);
   }
+  if (entry.parseStatus === "ERROR") {
+    throw new ValidationError(`Import validation failed for ${source}.`);
+  }
+  if (entry.parseStatus === "UPLOADED" || entry.parseStatus === "PARSING") {
+    throw new ValidationError(`Parse ${source} import before reconciliation.`);
+  }
   if (!entry.mappingTemplateVersion) {
     throw new ValidationError(`Mapping required for ${source} import.`);
   }
@@ -282,6 +300,8 @@ export const runReconciliation = async (
     firmId: context.firmId,
     payRunId: payRun.id
   });
+  let activeRunId: string | null = null;
+  let activeRunNumber: number | null = null;
 
   try {
     if (payRun.status === "LOCKED" || payRun.status === "ARCHIVED") {
@@ -324,15 +344,18 @@ export const runReconciliation = async (
 
     const parsedRegister = await buildParsedImport(
       registerImport,
-      registerImport.mappingTemplateVersion
+      registerImport.mappingTemplateVersion,
+      { firmId: context.firmId }
     );
     const parsedBank = await buildParsedImport(
       bankImport,
-      bankImport.mappingTemplateVersion
+      bankImport.mappingTemplateVersion,
+      { firmId: context.firmId }
     );
     const parsedGl = await buildParsedImport(
       glImport,
-      glImport.mappingTemplateVersion
+      glImport.mappingTemplateVersion,
+      { firmId: context.firmId }
     );
 
     const registerColumnMap = registerImport.mappingTemplateVersion
@@ -373,6 +396,7 @@ export const runReconciliation = async (
       orderBy: { runNumber: "desc" }
     });
     const runNumber = latestRun ? latestRun.runNumber + 1 : 1;
+    activeRunNumber = runNumber;
 
     const inputSummary = {
       imports: {
@@ -425,29 +449,35 @@ export const runReconciliation = async (
       checkType: string;
       severity: string;
     }> = [];
-    const run = await prisma.$transaction(async (tx) => {
-      const createdRun = await tx.reconciliationRun.create({
-        data: {
-          firmId: context.firmId,
-          payRunId: payRun.id,
-          runNumber,
-          bundleId: bundle.bundleId,
-          bundleVersion: bundle.bundleVersion,
-          status: "SUCCESS",
-          inputSummary,
-          executedByUserId: context.userId
-        }
+    const run = await prisma.reconciliationRun.create({
+      data: {
+        firmId: context.firmId,
+        payRunId: payRun.id,
+        runNumber,
+        bundleId: bundle.bundleId,
+        bundleVersion: bundle.bundleVersion,
+        status: "RUNNING",
+        inputSummary,
+        executedByUserId: context.userId
+      }
+    });
+    activeRunId = run.id;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.reconciliationRun.update({
+        where: { id: run.id },
+        data: { status: "SUCCESS" }
       });
 
       await tx.reconciliationRun.updateMany({
         where: {
           payRunId: payRun.id,
           supersededAt: null,
-          id: { not: createdRun.id }
+          id: { not: run.id }
         },
         data: {
           supersededAt,
-          supersededByRunId: createdRun.id
+          supersededByRunId: run.id
         }
       });
 
@@ -458,14 +488,14 @@ export const runReconciliation = async (
         },
         data: {
           supersededAt,
-          supersededByRunId: createdRun.id
+          supersededByRunId: run.id
         }
       });
 
       for (const evaluation of evaluations) {
         const checkResult = await tx.checkResult.create({
           data: {
-            reconciliationRunId: createdRun.id,
+            reconciliationRunId: run.id,
             checkType: evaluation.checkType,
             checkVersion: evaluation.checkVersion,
             status: evaluation.status,
@@ -481,7 +511,7 @@ export const runReconciliation = async (
             data: {
               firmId: context.firmId,
               payRunId: payRun.id,
-              reconciliationRunId: createdRun.id,
+              reconciliationRunId: run.id,
               checkResultId: checkResult.id,
               category: evaluation.exception.category,
               severity: evaluation.severity,
@@ -497,8 +527,6 @@ export const runReconciliation = async (
           });
         }
       }
-
-      return createdRun;
     });
 
     await transitionPayRunStatus(
@@ -555,6 +583,33 @@ export const runReconciliation = async (
     };
   } catch (error) {
     span.fail(error);
+    if (activeRunId) {
+      try {
+        await prisma.reconciliationRun.update({
+          where: { id: activeRunId },
+          data: { status: "FAILED" }
+        });
+        if (activeRunNumber !== null) {
+          await recordAuditEvent(
+            {
+              action: "RECONCILIATION_COMPLETED",
+              entityType: "PAY_RUN",
+              entityId: payRunId,
+              metadata: {
+                runNumber: activeRunNumber,
+                status: "FAILED"
+              }
+            },
+            {
+              firmId: context.firmId,
+              actorUserId: context.userId
+            }
+          );
+        }
+      } catch {
+        // Swallow status update failures to preserve the original error.
+      }
+    }
     throw error;
   }
 };

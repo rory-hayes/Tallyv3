@@ -8,6 +8,7 @@ import {
   isAllowedUpload
 } from "@/lib/imports";
 import { ValidationError, NotFoundError, ConflictError } from "@/lib/errors";
+import { formatBytes, importValidationLimits } from "@/lib/import-validation";
 
 const finalizeSchema = z.object({
   payRunId: z.string().uuid(),
@@ -52,6 +53,13 @@ export const POST = async (request: Request) => {
 
   if (!isAllowedUpload(originalFilename, mimeType)) {
     return errorResponse(400, "Unsupported file type.");
+  }
+
+  if (sizeBytes > importValidationLimits.maxBytes) {
+    return errorResponse(
+      400,
+      `File exceeds the ${formatBytes(importValidationLimits.maxBytes)} limit.`
+    );
   }
 
   try {

@@ -6,6 +6,8 @@ import { PermissionError, requirePermission } from "@/lib/permissions";
 import { assertStorageKeyMatches, isAllowedUpload } from "@/lib/imports";
 import { storageBucket, storageClient } from "@/lib/storage";
 import { logServerError } from "@/lib/server-errors";
+import { validateImportBuffer } from "@/lib/import-validation";
+import { ValidationError } from "@/lib/errors";
 
 const uploadSchema = z.object({
   payRunId: z.string().uuid(),
@@ -54,6 +56,20 @@ export const POST = async (request: Request) => {
     assertStorageKeyMatches(session.firmId, payRunId, storageKey);
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    try {
+      validateImportBuffer({
+        buffer,
+        fileName: originalFilename,
+        mimeType,
+        sizeBytes: file.size
+      });
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        return errorResponse(400, error.message);
+      }
+      throw error;
+    }
+
     const command = new PutObjectCommand({
       Bucket: storageBucket,
       Key: storageKey,

@@ -1,10 +1,13 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { notFound } from "next/navigation";
-import { prisma, type SourceType } from "@/lib/prisma";
+import {
+  prisma,
+  type ImportParseStatus,
+  type SourceType
+} from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { getReviewGateStatus } from "@/lib/pay-run-review";
-import { getPackDownloadUrl } from "@/lib/packs";
 import { ImportUploader } from "./ImportUploader";
 import { ReconciliationRunner } from "./ReconciliationRunner";
 import { PayRunReviewActions } from "./PayRunReviewActions";
@@ -14,6 +17,48 @@ export const dynamic = "force-dynamic";
 
 type PayRunDetailPageProps = {
   params: { payRunId: string };
+};
+
+const badgeBase =
+  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide";
+
+const importStatusLabels: Record<ImportParseStatus, string> = {
+  UPLOADED: "Uploaded",
+  PARSING: "Parsing",
+  PARSED: "Parsed",
+  MAPPED: "Mapped",
+  READY: "Ready",
+  ERROR: "Error"
+};
+
+const importStatusBadgeClasses: Record<ImportParseStatus, string> = {
+  UPLOADED: "bg-slate-100 text-slate-700",
+  PARSING: "bg-amber-100 text-amber-700",
+  PARSED: "bg-sky-100 text-sky-700",
+  MAPPED: "bg-blue-100 text-blue-700",
+  READY: "bg-emerald-100 text-emerald-700",
+  ERROR: "bg-rose-100 text-rose-700"
+};
+
+type ReconStatus = "NOT_RUN" | "RUNNING" | "SUCCESS" | "FAILED";
+
+const reconStatusLabels: Record<ReconStatus, string> = {
+  NOT_RUN: "Not run",
+  RUNNING: "Running",
+  SUCCESS: "Success",
+  FAILED: "Failed"
+};
+
+const reconStatusBadgeClasses: Record<ReconStatus, string> = {
+  NOT_RUN: "bg-slate-100 text-slate-700",
+  RUNNING: "bg-amber-100 text-amber-700",
+  SUCCESS: "bg-emerald-100 text-emerald-700",
+  FAILED: "bg-rose-100 text-rose-700"
+};
+
+const lockBadgeClasses = {
+  locked: "bg-emerald-100 text-emerald-700",
+  unlocked: "bg-amber-100 text-amber-700"
 };
 
 export default async function PayRunDetailPage({ params }: PayRunDetailPageProps) {
@@ -79,7 +124,9 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
     })
   ]);
 
-  const packDownloadUrl = latestPack ? await getPackDownloadUrl(latestPack) : null;
+  const packDownloadUrl = latestPack
+    ? `/packs/${latestPack.id}/download`
+    : null;
 
   const importsBySource = imports.reduce<Record<SourceType, typeof imports>>(
     (acc, entry) => {
@@ -119,7 +166,9 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
   };
 
   const isLocked = payRun.status === "LOCKED" || payRun.status === "ARCHIVED";
-  const isReconciling = payRun.status === "RECONCILING";
+  const reconStatus: ReconStatus = latestRun ? latestRun.status : "NOT_RUN";
+  const isReconciling =
+    reconStatus === "RUNNING" || payRun.status === "RECONCILING";
 
   const formatNumber = (value: number | null | undefined) => {
     if (value === null || value === undefined) {
@@ -170,11 +219,16 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
                     <p className="text-xs uppercase tracking-[0.2em] text-slate">
                       {sourceLabels[sourceType]}
                     </p>
-                    <p className="mt-2 text-sm font-semibold text-ink">
-                      {latest
-                        ? `Version ${latest.version} · ${latest.parseStatus}`
-                        : "No uploads yet"}
-                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-ink">
+                      <span>{latest ? `Version ${latest.version}` : "No uploads yet"}</span>
+                      {latest ? (
+                        <span
+                          className={`${badgeBase} ${importStatusBadgeClasses[latest.parseStatus]}`}
+                        >
+                          {importStatusLabels[latest.parseStatus]}
+                        </span>
+                      ) : null}
+                    </div>
                     {latest ? (
                       latest.mappingTemplateVersion ? (
                         <p className="mt-1 text-xs text-slate">
@@ -228,6 +282,12 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
             <p className="mt-2 text-sm text-slate">
               Run totals-first checks and capture exceptions for this pay run.
             </p>
+            <div className="mt-2 flex items-center gap-2 text-xs text-slate">
+              <span>Status</span>
+              <span className={`${badgeBase} ${reconStatusBadgeClasses[reconStatus]}`}>
+                {reconStatusLabels[reconStatus]}
+              </span>
+            </div>
           </div>
           <ReconciliationRunner
             payRunId={payRun.id}
@@ -240,7 +300,14 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
           <div className="mt-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate/20 bg-surface-muted px-4 py-3 text-xs text-slate">
               <span>Run #{latestRun.runNumber}</span>
-              <span>Status: {latestRun.status}</span>
+              <span className="flex items-center gap-2">
+                <span>Status</span>
+                <span
+                  className={`${badgeBase} ${reconStatusBadgeClasses[latestRun.status]}`}
+                >
+                  {reconStatusLabels[latestRun.status]}
+                </span>
+              </span>
               <span>
                 Exceptions: {latestRun.exceptions.length}
               </span>
@@ -315,7 +382,7 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
             </p>
           </div>
           <Link
-            href={`/exceptions?payRunId=${payRun.id}` as Route}
+            href={`/pay-runs/${payRun.id}/exceptions` as Route}
             className="rounded-lg border border-slate/30 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate hover:border-slate/60"
           >
             View exceptions
@@ -348,6 +415,20 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
             <p className="mt-2 text-sm text-slate">
               Generate the reconciliation pack PDF and lock when complete.
             </p>
+            {latestPack ? (
+              <div className="mt-2 flex items-center gap-2 text-xs text-slate">
+                <span>Status</span>
+                <span
+                  className={`${badgeBase} ${
+                    latestPack.lockedAt
+                      ? lockBadgeClasses.locked
+                      : lockBadgeClasses.unlocked
+                  }`}
+                >
+                  {latestPack.lockedAt ? "Locked" : "Unlocked"}
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="mt-4">
@@ -419,7 +500,13 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
                         ? "Template applied"
                         : "Not mapped"}
                   </td>
-                  <td className="px-4 py-3 text-slate">{entry.parseStatus}</td>
+                  <td className="px-4 py-3 text-slate">
+                    <span
+                      className={`${badgeBase} ${importStatusBadgeClasses[entry.parseStatus]}`}
+                    >
+                      {importStatusLabels[entry.parseStatus]}
+                    </span>
+                  </td>
                 </tr>
               ))
             )}

@@ -11,7 +11,10 @@ const envSchema = z.object({
   S3_ACCESS_KEY_ID: z.string(),
   S3_SECRET_ACCESS_KEY: z.string(),
   S3_SESSION_TOKEN: z.string().optional(),
-  S3_FORCE_PATH_STYLE: z.string().optional()
+  S3_FORCE_PATH_STYLE: z.string().optional(),
+  IMPORT_MAX_BYTES: z.coerce.number().int().positive().optional(),
+  IMPORT_MAX_ROWS: z.coerce.number().int().positive().optional(),
+  IMPORT_MAX_COLUMNS: z.coerce.number().int().positive().optional()
 });
 
 export const env = envSchema.parse(process.env);

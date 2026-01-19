@@ -13,6 +13,18 @@ describe("mapping template versioning", () => {
     await resetDb();
   });
 
+  const createParsedImport = async (
+    context: Parameters<typeof createImport>[0],
+    input: Parameters<typeof createImport>[1]
+  ) => {
+    const result = await createImport(context, input);
+    await prisma.import.update({
+      where: { id: result.importRecord.id },
+      data: { parseStatus: "PARSED" }
+    });
+    return result;
+  };
+
   it("creates a new template and versions on change", async () => {
     const { firm, user } = await createFirmWithUser("ADMIN");
     const client = await createClient(
@@ -34,7 +46,7 @@ describe("mapping template versioning", () => {
     );
 
     const firstHash = await sha256FromString("register-v1");
-    const firstImport = await createImport(
+    const firstImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -69,7 +81,7 @@ describe("mapping template versioning", () => {
     expect(created.version).toBe(1);
 
     const secondHash = await sha256FromString("register-v2");
-    const secondImport = await createImport(
+    const secondImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -132,7 +144,7 @@ describe("mapping template versioning", () => {
     );
 
     const importHash = await sha256FromString("register-base");
-    const importRecord = await createImport(
+    const importRecord = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -160,7 +172,7 @@ describe("mapping template versioning", () => {
     );
 
     const secondHash = await sha256FromString("register-base-2");
-    const secondImport = await createImport(
+    const secondImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -218,7 +230,7 @@ describe("mapping template versioning", () => {
     const bankHash = await sha256FromString("bank");
     const glHash = await sha256FromString("gl");
 
-    const registerImport = await createImport(
+    const registerImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -230,7 +242,7 @@ describe("mapping template versioning", () => {
         sizeBytes: 120
       }
     );
-    const bankImport = await createImport(
+    const bankImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -242,7 +254,7 @@ describe("mapping template versioning", () => {
         sizeBytes: 120
       }
     );
-    const glImport = await createImport(
+    const glImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -329,7 +341,7 @@ describe("mapping template versioning", () => {
       }
     );
     const importHash = await sha256FromString("register-reviewer");
-    const importRecord = await createImport(
+    const importRecord = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -383,7 +395,7 @@ describe("mapping template versioning", () => {
     );
 
     const firstHash = await sha256FromString("register-drift-1");
-    const firstImport = await createImport(
+    const firstImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -411,7 +423,7 @@ describe("mapping template versioning", () => {
     );
 
     const secondHash = await sha256FromString("register-drift-2");
-    const secondImport = await createImport(
+    const secondImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -462,7 +474,7 @@ describe("mapping template versioning", () => {
       }
     );
     const importHash = await sha256FromString("register-draft");
-    const importRecord = await createImport(
+    const importRecord = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -516,7 +528,7 @@ describe("mapping template versioning", () => {
       }
     );
     const importHash = await sha256FromString("register-name");
-    const importRecord = await createImport(
+    const importRecord = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -565,7 +577,7 @@ describe("mapping template versioning", () => {
       }
     );
     const importHash = await sha256FromString("register-invalid");
-    const importRecord = await createImport(
+    const importRecord = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -632,7 +644,7 @@ describe("mapping template versioning", () => {
     );
 
     const hashA = await sha256FromString("client-a-template");
-    const importA = await createImport(
+    const importA = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRunA.id,
@@ -660,7 +672,7 @@ describe("mapping template versioning", () => {
     );
 
     const hashB = await sha256FromString("client-b-import");
-    const importB = await createImport(
+    const importB = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRunB.id,
@@ -710,7 +722,7 @@ describe("mapping template versioning", () => {
       }
     );
     const importHash = await sha256FromString("firm-a");
-    const importRecord = await createImport(
+    const importRecord = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -756,7 +768,7 @@ describe("mapping template versioning", () => {
       }
     );
     const otherHash = await sha256FromString("firm-b");
-    const otherImport = await createImport(
+    const otherImport = await createParsedImport(
       { firmId: other.firm.id, userId: other.user.id, role: "ADMIN" },
       {
         payRunId: otherPayRun.id,
@@ -811,7 +823,7 @@ describe("mapping template versioning", () => {
       }
     );
     const importHash = await sha256FromString("register-locked");
-    const importRecord = await createImport(
+    const importRecord = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -866,7 +878,7 @@ describe("mapping template versioning", () => {
       }
     );
     const importHash = await sha256FromString("register-mapped");
-    const importRecord = await createImport(
+    const importRecord = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -925,7 +937,7 @@ describe("mapping template versioning", () => {
     );
 
     const baseHash = await sha256FromString("status-base");
-    const baseImport = await createImport(
+    const baseImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -953,7 +965,7 @@ describe("mapping template versioning", () => {
     );
 
     const nextHash = await sha256FromString("status-next");
-    const nextImport = await createImport(
+    const nextImport = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -1022,7 +1034,7 @@ describe("mapping template versioning", () => {
       }
     );
     const hash = await sha256FromString("status-deprecate");
-    const importRecord = await createImport(
+    const importRecord = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,
@@ -1087,7 +1099,7 @@ describe("mapping template versioning", () => {
       }
     );
     const hash = await sha256FromString("scoped-template");
-    const importRecord = await createImport(
+    const importRecord = await createParsedImport(
       { firmId: firm.id, userId: user.id, role: "ADMIN" },
       {
         payRunId: payRun.id,

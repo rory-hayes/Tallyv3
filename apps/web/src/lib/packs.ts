@@ -53,6 +53,73 @@ const parseRedactionSettings = (defaults: unknown) => {
   };
 };
 
+const maskTrailing = (value: string, visibleCount: number) => {
+  if (value.length <= visibleCount) {
+    return value;
+  }
+  return `${"*".repeat(value.length - visibleCount)}${value.slice(-visibleCount)}`;
+};
+
+const maskDigitsPreservingSeparators = (value: string, visibleCount: number) => {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length <= visibleCount) {
+    return value;
+  }
+  const maskedDigits = `${"*".repeat(digits.length - visibleCount)}${digits.slice(
+    -visibleCount
+  )}`;
+  let index = 0;
+  return value.replace(/\d/g, () => maskedDigits[index++] ?? "");
+};
+
+const maskEmployeeNamesInText = (text: string) => {
+  const namePart = "[A-Za-z'\\u2019-]*[a-z][A-Za-z'\\u2019-]*";
+  const namePattern = new RegExp(
+    `\\b(Employee|Payee|Name)(:)?\\s+(${namePart}(?:\\s+${namePart})+)\\b`,
+    "g"
+  );
+  return text.replace(namePattern, (_match, label, colon, names) => {
+    const maskedNames = String(names)
+      .split(/\s+/)
+      .map((part) => (part.length <= 1 ? part : `${part[0]}${"*".repeat(part.length - 1)}`))
+      .join(" ");
+    return `${label}${colon ?? ""} ${maskedNames}`;
+  });
+};
+
+const maskBankDetailsInText = (text: string) => {
+  const bankPattern = /\b(?:\d[ -]?){7,}\d\b/g;
+  return text.replace(bankPattern, (match) =>
+    maskDigitsPreservingSeparators(match, 4)
+  );
+};
+
+const maskNiNumbersInText = (text: string) => {
+  const niPattern = /\b[A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D]\b/gi;
+  return text.replace(niPattern, (match) => maskTrailing(match, 2));
+};
+
+const applyRedactionToLine = (
+  line: string,
+  redaction: {
+    maskEmployeeNames: boolean;
+    maskBankDetails: boolean;
+    maskNiNumbers: boolean;
+  }
+) => {
+  let redacted = line;
+  if (redaction.maskEmployeeNames) {
+    redacted = maskEmployeeNamesInText(redacted);
+  }
+  if (redaction.maskBankDetails) {
+    redacted = maskBankDetailsInText(redacted);
+  }
+  if (redaction.maskNiNumbers) {
+    redacted = maskNiNumbersInText(redacted);
+  }
+  return redacted;
+};
+
 const buildPdfFromLines = (lines: string[]): Buffer => {
   const contentLines: string[] = ["BT", "/F1 12 Tf", "72 720 Td"];
   lines.forEach((line, index) => {
@@ -212,6 +279,14 @@ const buildPackLines = ({
         `- ${exception.severity} ${exception.status} ${exception.title}${evidenceText}`
       );
     });
+  }
+
+  if (
+    redaction.maskEmployeeNames ||
+    redaction.maskBankDetails ||
+    redaction.maskNiNumbers
+  ) {
+    return lines.map((line) => applyRedactionToLine(line, redaction));
   }
 
   return lines;

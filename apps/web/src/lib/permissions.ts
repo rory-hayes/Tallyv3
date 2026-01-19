@@ -11,7 +11,8 @@ export type Permission =
   | "pay-run:revision"
   | "import:upload"
   | "template:write"
-  | "reconciliation:run";
+  | "reconciliation:run"
+  | "pack:download";
 
 const rolePermissions: Record<Role, Permission[]> = {
   ADMIN: [
@@ -25,7 +26,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "pay-run:revision",
     "import:upload",
     "template:write",
-    "reconciliation:run"
+    "reconciliation:run",
+    "pack:download"
   ],
   PREPARER: [
     "audit:view",
@@ -35,7 +37,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "pay-run:revision",
     "import:upload",
     "template:write",
-    "reconciliation:run"
+    "reconciliation:run",
+    "pack:download"
   ],
   REVIEWER: [
     "audit:view",
@@ -45,7 +48,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "pay-run:revision",
     "import:upload",
     "template:write",
-    "reconciliation:run"
+    "reconciliation:run",
+    "pack:download"
   ]
 };
 

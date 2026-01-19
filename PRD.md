@@ -90,8 +90,19 @@ Today this is done with spreadsheets, screenshots, and ad hoc checklists—slow,
 - “Locked pack” is immutable; revisions are required to change results.
 - No PII in logs.
 - Parsing and reconciliation handle common sad paths (missing sources, wrong files, template drift).
+ - Upload validation blocks invalid files (magic bytes + parseability).
+ - Import + reconciliation statuses are accurate and clearly separated in UI.
+ - Exceptions routes work with empty-state handling.
+ - Pack download works via a secure server endpoint with user-friendly errors.
 
 ## 10. Open questions
 - Which 2 payroll systems are the first-class template targets in v1 (e.g., BrightPay + Staffology)?
 - Which bank/payment formats are most common for early adopters (BACS file vs summary)?
 - What minimum statutory totals exports do bureaus reliably have available?
+
+## 11. Production readiness additions (MVP hardening)
+- Strict file validation and size/row limits.
+- Deterministic import status pipeline and reconciliation statuses.
+- Exceptions UI must be reachable and deterministic even with zero exceptions.
+- Pack download must be access-controlled and reliable.
+- CI must run lint, typecheck, and tests on every change.
