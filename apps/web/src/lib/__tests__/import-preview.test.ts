@@ -122,6 +122,67 @@ describe("import preview", () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
+  it("allows retrying parse failures when forced", async () => {
+    const { firm, user } = await createFirmWithUser("ADMIN");
+    const client = await createClient(
+      { firmId: firm.id, userId: user.id },
+      {
+        name: "Preview Retry Client",
+        payrollSystem: "OTHER",
+        payrollSystemOther: "Other",
+        payrollFrequency: "MONTHLY"
+      }
+    );
+    const payRun = await createPayRun(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        clientId: client.id,
+        periodStart: new Date("2026-09-01T00:00:00Z"),
+        periodEnd: new Date("2026-09-30T00:00:00Z")
+      }
+    );
+    const importRecord = await prisma.import.create({
+      data: {
+        firmId: firm.id,
+        clientId: client.id,
+        payRunId: payRun.id,
+        sourceType: "REGISTER",
+        version: 1,
+        storageUri: `s3://${storageBucket}/uploads/file-retry.csv`,
+        fileHashSha256: "hash-preview-retry",
+        originalFilename: "file-retry.csv",
+        mimeType: "text/csv",
+        sizeBytes: 120,
+        uploadedByUserId: user.id,
+        parseStatus: "ERROR_PARSE_FAILED",
+        errorCode: "ERROR_PARSE_FAILED",
+        errorMessage: "Failed to parse."
+      }
+    });
+
+    vi.spyOn(
+      storageClient as unknown as { send: () => Promise<unknown> },
+      "send"
+    ).mockResolvedValue({
+      Body: Buffer.from("Name,Net\nAlex,120\n")
+    } as { Body: unknown });
+
+    const preview = await getImportPreview(
+      firm.id,
+      importRecord.id,
+      null,
+      user.id,
+      { force: true }
+    );
+    expect(preview.rows[0]).toEqual(["Name", "Net"]);
+
+    const updated = await prisma.import.findUnique({
+      where: { id: importRecord.id }
+    });
+    expect(updated?.parseStatus).toBe("PARSED");
+    expect(updated?.errorCode).toBeNull();
+  });
+
   it("keeps parse status when already mapped", async () => {
     const { firm, user } = await createFirmWithUser("ADMIN");
     const client = await createClient(

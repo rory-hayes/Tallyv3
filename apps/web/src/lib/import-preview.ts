@@ -19,7 +19,8 @@ export const getImportPreview = async (
   firmId: string,
   importId: string,
   sheetName?: string | null,
-  actorUserId?: string | null
+  actorUserId?: string | null,
+  options?: { force?: boolean }
 ) => {
   const span = startSpan("IMPORT_PREVIEW", { firmId, importId });
   const importRecord = await prisma.import.findFirst({
@@ -33,15 +34,21 @@ export const getImportPreview = async (
     throw new NotFoundError("Import not found.");
   }
 
-  if (isImportErrorStatus(importRecord.parseStatus)) {
+  const canRetry =
+    options?.force === true && importRecord.parseStatus === "ERROR_PARSE_FAILED";
+
+  if (isImportErrorStatus(importRecord.parseStatus) && !canRetry) {
     throw new ValidationError("This import failed validation. Re-upload the file.");
   }
 
   const shouldUpdateStatus =
-    importRecord.parseStatus === "UPLOADED" || importRecord.parseStatus === "PARSING";
+    canRetry ||
+    importRecord.parseStatus === "UPLOADED" ||
+    importRecord.parseStatus === "PARSING";
 
   if (shouldUpdateStatus) {
-    assertImportTransition(importRecord.parseStatus, "PARSING");
+    const fromStatus = canRetry ? "ERROR_PARSE_FAILED" : importRecord.parseStatus;
+    assertImportTransition(fromStatus, "PARSING");
     await prisma.import.update({
       where: { id: importRecord.id },
       data: {
@@ -51,7 +58,7 @@ export const getImportPreview = async (
       }
     });
 
-    if (importRecord.parseStatus === "UPLOADED") {
+    if (importRecord.parseStatus === "UPLOADED" || canRetry) {
       await recordAuditEvent(
         {
           action: "IMPORT_PARSING_STARTED",
@@ -59,7 +66,8 @@ export const getImportPreview = async (
           entityId: importRecord.id,
           metadata: {
             sourceType: importRecord.sourceType,
-            version: importRecord.version
+            version: importRecord.version,
+            retry: canRetry
           }
         },
         {
@@ -122,7 +130,8 @@ export const getImportPreview = async (
             version: importRecord.version,
             rowCount: preview.rowCount,
             columnCount: preview.columnCount,
-            sheetCount: preview.sheetNames.length
+            sheetCount: preview.sheetNames.length,
+            retry: canRetry
           }
         },
         {
@@ -163,7 +172,8 @@ export const getImportPreview = async (
         metadata: {
           sourceType: importRecord.sourceType,
           version: importRecord.version,
-          errorCode
+          errorCode,
+          retry: canRetry
         }
       },
       {

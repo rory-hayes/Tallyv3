@@ -220,6 +220,7 @@ const buildPackLines = ({
     status: string;
     severity: string;
     evidence?: Array<{ rowNumbers: number[] }> | null;
+    resolutionNote?: string | null;
   }>;
 }): string[] => {
   const lines: string[] = [];
@@ -280,8 +281,11 @@ const buildPackLines = ({
         exception.evidence?.flatMap((entry) => entry.rowNumbers ?? []) ?? [];
       const evidenceText =
         evidenceRows.length > 0 ? ` rows ${evidenceRows.join(", ")}` : "";
+      const noteText = exception.resolutionNote
+        ? ` note: ${exception.resolutionNote}`
+        : "";
       lines.push(
-        `- ${exception.severity} ${exception.status} ${exception.title}${evidenceText}`
+        `- ${exception.severity} ${exception.status} ${exception.title}${evidenceText}${noteText}`
       );
     });
   }
@@ -453,7 +457,8 @@ export const generatePack = async (context: ActorContext, payRunId: string) => {
         severity: exception.severity,
         evidence: Array.isArray(exception.evidence)
           ? (exception.evidence as Array<{ rowNumbers: number[] }>)
-          : null
+          : null,
+        resolutionNote: exception.resolutionNote
       }))
     });
 

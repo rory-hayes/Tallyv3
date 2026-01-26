@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { prisma, type PayRunStatus, Prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { derivePayRunStatus, getOpenExceptionCounts } from "@/lib/pay-run-exceptions";
 
 type SearchPageProps = {
   searchParams?: Record<string, string | string[] | undefined>;
@@ -64,6 +65,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const query = typeof searchParams?.q === "string" ? searchParams.q.trim() : "";
   const status =
     typeof searchParams?.status === "string" ? searchParams.status : "";
+  const statusFilter = status === "EXCEPTIONS_OPEN" ? "" : status;
   const from = typeof searchParams?.from === "string" ? searchParams.from : "";
   const to = typeof searchParams?.to === "string" ? searchParams.to : "";
 
@@ -81,7 +83,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
           }
         }
       : {}),
-    ...(status ? { status: status as PayRunStatus } : {}),
+    ...(statusFilter ? { status: statusFilter as PayRunStatus } : {}),
     ...(fromDate ? { periodStart: { gte: fromDate } } : {}),
     ...(toDate ? { periodEnd: { lte: toDate } } : {})
   };
@@ -116,6 +118,22 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       take: 50
     })
   ]);
+
+  const openExceptionCounts = await getOpenExceptionCounts(
+    session.firmId,
+    payRuns.map((payRun) => payRun.id)
+  );
+  const payRunRows = payRuns.map((payRun) => ({
+    ...payRun,
+    displayStatus: derivePayRunStatus(
+      payRun.status,
+      openExceptionCounts.get(payRun.id) ?? 0
+    )
+  }));
+  const visiblePayRuns =
+    status === "EXCEPTIONS_OPEN"
+      ? payRunRows.filter((payRun) => payRun.displayStatus === "EXCEPTIONS_OPEN")
+      : payRunRows;
 
   const packRows = packs.map((pack) => ({
     id: pack.id,
@@ -213,14 +231,14 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
             </tr>
           </thead>
           <tbody>
-            {payRuns.length === 0 ? (
+            {visiblePayRuns.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-sm text-slate">
                   No pay runs match the current search.
                 </td>
               </tr>
             ) : (
-              payRuns.map((payRun) => (
+              visiblePayRuns.map((payRun) => (
                 <tr key={payRun.id} className="border-b border-slate/10">
                   <td className="px-4 py-3 font-semibold text-ink">
                     {payRun.client.name}
@@ -228,8 +246,10 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                   <td className="px-4 py-3 text-slate">{payRun.periodLabel}</td>
                   <td className="px-4 py-3 text-slate">#{payRun.revision}</td>
                   <td className="px-4 py-3">
-                    <span className={`${badgeBase} ${statusBadgeClasses[payRun.status]}`}>
-                      {statusLabels[payRun.status]}
+                    <span
+                      className={`${badgeBase} ${statusBadgeClasses[payRun.displayStatus]}`}
+                    >
+                      {statusLabels[payRun.displayStatus]}
                     </span>
                   </td>
                   <td className="px-4 py-3">

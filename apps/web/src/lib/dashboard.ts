@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma, type PayRunStatus, type SourceType } from "@/lib/prisma";
 import { resolveRequiredSources } from "@/lib/required-sources";
+import { getOpenExceptionCounts } from "@/lib/pay-run-exceptions";
 
 export type DashboardData = {
   requiredSources: SourceType[];
@@ -43,7 +44,7 @@ export const getDashboardData = async (firmId: string): Promise<DashboardData> =
       firmId,
       status: { notIn: ["ARCHIVED"] }
     },
-    select: { id: true }
+    select: { id: true, status: true }
   });
 
   const payRunIds = payRuns.map((payRun) => payRun.id);
@@ -96,6 +97,19 @@ export const getDashboardData = async (firmId: string): Promise<DashboardData> =
   }
 
   const approvalsPending = countsByStatus.READY_FOR_REVIEW ?? 0;
+
+  const openExceptionCounts = await getOpenExceptionCounts(firmId, payRunIds);
+  const reconciledIds = payRuns
+    .filter((payRun) => payRun.status === "RECONCILED")
+    .map((payRun) => payRun.id);
+  const exceptionsOpenCount = reconciledIds.filter((id) =>
+    openExceptionCounts.has(id)
+  ).length;
+  if (exceptionsOpenCount > 0) {
+    const reconciledCount = countsByStatus.RECONCILED ?? 0;
+    countsByStatus.RECONCILED = Math.max(0, reconciledCount - exceptionsOpenCount);
+    countsByStatus.EXCEPTIONS_OPEN = exceptionsOpenCount;
+  }
 
   const recentAuditEvents = await prisma.auditEvent.findMany({
     where: { firmId },

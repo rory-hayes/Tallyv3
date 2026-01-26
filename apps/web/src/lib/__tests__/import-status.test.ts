@@ -17,6 +17,7 @@ describe("import status helpers", () => {
     expect(() => assertImportTransition("UPLOADED", "PARSING")).not.toThrow();
     expect(() => assertImportTransition("PARSING", "PARSED")).not.toThrow();
     expect(() => assertImportTransition("PARSED", "READY")).not.toThrow();
+    expect(() => assertImportTransition("ERROR_PARSE_FAILED", "PARSING")).not.toThrow();
   });
 
   it("rejects invalid transitions", () => {

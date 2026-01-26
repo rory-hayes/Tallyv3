@@ -22,7 +22,7 @@ const allowedTransitions: Record<ImportStatus, ImportStatus[]> = {
   MAPPED: ["READY"],
   READY: ["MAPPED"],
   ERROR_FILE_INVALID: [],
-  ERROR_PARSE_FAILED: []
+  ERROR_PARSE_FAILED: ["PARSING"]
 };
 
 export const isImportErrorStatus = (status: ImportStatus): boolean =>

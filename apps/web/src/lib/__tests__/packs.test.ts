@@ -259,6 +259,40 @@ describe("pack generation and locking", () => {
     expect(pdfText).not.toContain("AB123456C");
   });
 
+  it("includes exception resolution notes in pack output", async () => {
+    const { firm, user, payRun } = await seedApprovedPayRun();
+    const exception = await prisma.exception.findFirst({
+      where: { firmId: firm.id, payRunId: payRun.id }
+    });
+    expect(exception).not.toBeNull();
+    await prisma.exception.update({
+      where: { id: exception!.id },
+      data: {
+        status: "RESOLVED",
+        resolutionNote: "Bank batch split."
+      }
+    });
+
+    const sendSpy = vi
+      .spyOn(
+        storageClient as unknown as {
+          send: (command: { input?: { Body?: unknown } }) => Promise<unknown>;
+        },
+        "send"
+      )
+      .mockResolvedValueOnce({});
+
+    await generatePack(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id
+    );
+
+    const command = sendSpy.mock.calls[0]?.[0] as { input?: { Body?: Buffer } };
+    const pdfBody = command.input?.Body as Buffer;
+    const pdfText = pdfBody.toString("utf8");
+    expect(pdfText).toContain("note: Bank batch split.");
+  });
+
   it("generates packs when input summaries are missing", async () => {
     const { firm, user } = await createFirmWithUser("ADMIN");
     const client = await createClient(

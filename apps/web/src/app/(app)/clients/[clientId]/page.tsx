@@ -3,6 +3,7 @@ import type { Route } from "next";
 import { notFound } from "next/navigation";
 import { prisma, type PayrollSystem, type PayRunStatus } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { derivePayRunStatus, getOpenExceptionCounts } from "@/lib/pay-run-exceptions";
 
 type ClientDetailPageProps = {
   params: { clientId: string };
@@ -31,6 +32,18 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
     },
     orderBy: [{ periodStart: "desc" }, { revision: "desc" }]
   });
+
+  const openExceptionCounts = await getOpenExceptionCounts(
+    session.firmId,
+    payRuns.map((payRun) => payRun.id)
+  );
+  const payRunRows = payRuns.map((payRun) => ({
+    ...payRun,
+    displayStatus: derivePayRunStatus(
+      payRun.status,
+      openExceptionCounts.get(payRun.id) ?? 0
+    )
+  }));
 
   const packs = await prisma.pack.findMany({
     where: {
@@ -180,22 +193,22 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
           </Link>
         </div>
         <div className="px-4 py-2">
-          {payRuns.length === 0 ? (
+          {payRunRows.length === 0 ? (
             <p className="py-4 text-sm text-slate">
               No pay runs yet. Create the first pay run for this client.
             </p>
           ) : (
             <ul className="divide-y divide-slate/10">
-              {payRuns.map((payRun) => (
+              {payRunRows.map((payRun) => (
                 <li key={payRun.id} className="flex items-center justify-between py-3">
                   <div>
                     <p className="text-sm font-semibold text-ink">{payRun.periodLabel}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate">
                       <span>Revision {payRun.revision}</span>
                       <span
-                        className={`${badgeBase} ${statusBadgeClasses[payRun.status]}`}
+                        className={`${badgeBase} ${statusBadgeClasses[payRun.displayStatus]}`}
                       >
-                        {statusLabels[payRun.status]}
+                        {statusLabels[payRun.displayStatus]}
                       </span>
                     </div>
                   </div>

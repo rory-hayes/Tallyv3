@@ -2,15 +2,36 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { requirePermission } from "@/lib/permissions";
 import { SettingsNav } from "@/components/SettingsNav";
+import Link from "next/link";
+import type { Route } from "next";
 
 const formatter = new Intl.DateTimeFormat("en-GB", {
   dateStyle: "medium",
   timeStyle: "short"
 });
 
-export default async function AuditLogPage() {
+type AuditLogPageProps = {
+  searchParams?: Record<string, string | string[] | undefined>;
+};
+
+export default async function AuditLogPage({ searchParams }: AuditLogPageProps) {
   const { session, user } = await requireUser();
   requirePermission(user.role, "audit:view");
+
+  const clientParam =
+    typeof searchParams?.clientId === "string" ? searchParams.clientId : "";
+  const fromParam =
+    typeof searchParams?.from === "string" ? searchParams.from : "";
+  const toParam =
+    typeof searchParams?.to === "string" ? searchParams.to : "";
+
+  const clients = await prisma.client.findMany({
+    where: {
+      firmId: session.firmId
+    },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true }
+  });
 
   const events = await prisma.auditEvent.findMany({
     where: {
@@ -38,6 +59,79 @@ export default async function AuditLogPage() {
         </p>
       </div>
       <SettingsNav />
+
+      <div className="rounded-xl border border-slate/20 bg-surface p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate">
+              Export audit log
+            </p>
+            <p className="mt-2 text-sm text-slate">
+              Download a CSV filtered by client and date range.
+            </p>
+          </div>
+          <Link
+            href={"/settings/audit-log/export" as Route}
+            className="text-xs font-semibold uppercase tracking-wide text-slate hover:text-ink"
+          >
+            Download all
+          </Link>
+        </div>
+
+        <form
+          method="GET"
+          action="/settings/audit-log/export"
+          className="mt-4 grid gap-3 md:grid-cols-4"
+        >
+          <div className="md:col-span-2">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate">
+              Client
+            </label>
+            <select
+              name="clientId"
+              defaultValue={clientParam}
+              className="mt-2 w-full rounded-lg border border-slate/30 bg-surface px-3 py-2 text-sm"
+            >
+              <option value="">All clients</option>
+              {clients.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate">
+              From
+            </label>
+            <input
+              type="date"
+              name="from"
+              defaultValue={fromParam}
+              className="mt-2 w-full rounded-lg border border-slate/30 bg-surface px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate">
+              To
+            </label>
+            <input
+              type="date"
+              name="to"
+              defaultValue={toParam}
+              className="mt-2 w-full rounded-lg border border-slate/30 bg-surface px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="md:col-span-4">
+            <button
+              type="submit"
+              className="rounded-lg border border-slate/30 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate hover:border-slate/60"
+            >
+              Download CSV
+            </button>
+          </div>
+        </form>
+      </div>
 
       <div className="rounded-xl border border-slate/20 bg-surface p-5">
         <div className="overflow-x-auto">

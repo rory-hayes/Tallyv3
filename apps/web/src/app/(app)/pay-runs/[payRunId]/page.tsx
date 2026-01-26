@@ -8,10 +8,12 @@ import {
 } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { getReviewGateStatus } from "@/lib/pay-run-review";
+import { derivePayRunStatus, getOpenExceptionCounts } from "@/lib/pay-run-exceptions";
 import { ImportUploader } from "./ImportUploader";
 import { ReconciliationRunner } from "./ReconciliationRunner";
 import { PayRunReviewActions } from "./PayRunReviewActions";
 import { PackActions } from "./PackActions";
+import { ImportRetryButton } from "@/components/ImportRetryButton";
 
 export const dynamic = "force-dynamic";
 
@@ -107,7 +109,13 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
     orderBy: { runNumber: "desc" }
   });
 
-  const [reviewGate, latestApproval, latestPack] = await Promise.all([
+  const [
+    reviewGate,
+    latestApproval,
+    latestPack,
+    openExceptionCounts,
+    timelineEvents
+  ] = await Promise.all([
     getReviewGateStatus(session.firmId, payRun.id),
     prisma.approval.findFirst({
       where: {
@@ -125,8 +133,26 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
         payRunId: payRun.id
       },
       orderBy: { packVersion: "desc" }
+    }),
+    getOpenExceptionCounts(session.firmId, [payRun.id]),
+    prisma.auditEvent.findMany({
+      where: {
+        firmId: session.firmId,
+        entityType: "PAY_RUN",
+        entityId: payRun.id
+      },
+      include: {
+        actorUser: {
+          select: { email: true }
+        }
+      },
+      orderBy: { timestamp: "desc" },
+      take: 12
     })
   ]);
+
+  const openExceptionCount = openExceptionCounts.get(payRun.id) ?? 0;
+  const displayStatus = derivePayRunStatus(payRun.status, openExceptionCount);
 
   const packDownloadUrl = latestPack
     ? `/packs/${latestPack.id}/download`
@@ -205,7 +231,7 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
             {payRun.client.name} · {payRun.periodLabel}
           </h1>
           <p className="mt-2 text-sm text-slate">
-            Revision {payRun.revision} · {payRun.status}
+            Revision {payRun.revision} · {displayStatus}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -272,6 +298,12 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
                       <p className="mt-1 text-xs text-rose-700">
                         {latest.errorMessage ?? "Import failed validation."}
                       </p>
+                    ) : null}
+                    {latest && latest.parseStatus === "ERROR_PARSE_FAILED" ? (
+                      <ImportRetryButton
+                        importId={latest.id}
+                        disabled={isLocked}
+                      />
                     ) : null}
                     {latest ? (
                       <p className="mt-1 text-xs text-slate">
@@ -554,6 +586,42 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="rounded-xl border border-slate/20 bg-surface">
+        <div className="border-b border-slate/20 px-4 py-3">
+          <h2 className="text-sm font-semibold text-ink">Timeline</h2>
+          <p className="mt-1 text-xs text-slate">
+            Major workflow events for this pay run.
+          </p>
+        </div>
+        <div className="divide-y divide-slate/10">
+          {timelineEvents.length === 0 ? (
+            <p className="px-4 py-4 text-sm text-slate">
+              No activity recorded yet.
+            </p>
+          ) : (
+            timelineEvents.map((event) => (
+              <div
+                key={event.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm"
+              >
+                <div>
+                  <p className="font-semibold text-ink">{event.action}</p>
+                  <p className="text-xs text-slate">
+                    {event.actorUser?.email ?? "System"}
+                  </p>
+                </div>
+                <p className="text-xs text-slate">
+                  {event.timestamp.toLocaleString("en-GB", {
+                    dateStyle: "medium",
+                    timeStyle: "short"
+                  })}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );
