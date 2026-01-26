@@ -29,6 +29,7 @@ const severityOptions: Array<{ value: CheckSeverity; label: string }> = [
 
 const categoryOptions: Array<{ value: ExceptionCategory; label: string }> = [
   { value: "BANK_MISMATCH", label: "Bank mismatch" },
+  { value: "BANK_DATA_QUALITY", label: "Bank data quality" },
   { value: "JOURNAL_MISMATCH", label: "Journal mismatch" },
   { value: "STATUTORY_MISMATCH", label: "Statutory mismatch" },
   { value: "SANITY", label: "Sanity" }
@@ -201,14 +202,24 @@ export default async function ExceptionsPage({ searchParams }: ExceptionsPagePro
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Assignee</th>
               <th className="px-4 py-3">Pay run</th>
+              <th className="px-4 py-3">Last update</th>
               <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {exceptions.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-sm text-slate">
-                  No exceptions match these filters.
+                <td colSpan={7} className="px-4 py-6 text-sm text-slate">
+                  <p>No exceptions match these filters.</p>
+                  <p className="mt-1 text-xs text-slate">
+                    Exceptions are generated when reconciliation checks fail.
+                  </p>
+                  <Link
+                    href={"/dashboard" as Route}
+                    className="mt-3 inline-flex text-xs font-semibold uppercase tracking-wide text-accent hover:text-accent-strong"
+                  >
+                    Back to dashboard
+                  </Link>
                 </td>
               </tr>
             ) : (
@@ -225,6 +236,12 @@ export default async function ExceptionsPage({ searchParams }: ExceptionsPagePro
                   </td>
                   <td className="px-4 py-3 text-slate">
                     {exception.payRun.client.name} · {exception.payRun.periodLabel}
+                  </td>
+                  <td className="px-4 py-3 text-slate">
+                    {exception.updatedAt.toLocaleString("en-GB", {
+                      dateStyle: "medium",
+                      timeStyle: "short"
+                    })}
                   </td>
                   <td className="px-4 py-3">
                     <Link

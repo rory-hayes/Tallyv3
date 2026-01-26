@@ -3,7 +3,7 @@ import type { Route } from "next";
 import { notFound } from "next/navigation";
 import {
   prisma,
-  type ImportParseStatus,
+  type ImportStatus,
   type SourceType
 } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
@@ -22,22 +22,26 @@ type PayRunDetailPageProps = {
 const badgeBase =
   "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide";
 
-const importStatusLabels: Record<ImportParseStatus, string> = {
+const importStatusLabels: Record<ImportStatus, string> = {
   UPLOADED: "Uploaded",
   PARSING: "Parsing",
   PARSED: "Parsed",
+  MAPPING_REQUIRED: "Mapping required",
   MAPPED: "Mapped",
   READY: "Ready",
-  ERROR: "Error"
+  ERROR_FILE_INVALID: "File invalid",
+  ERROR_PARSE_FAILED: "Parse failed"
 };
 
-const importStatusBadgeClasses: Record<ImportParseStatus, string> = {
+const importStatusBadgeClasses: Record<ImportStatus, string> = {
   UPLOADED: "bg-slate-100 text-slate-700",
   PARSING: "bg-amber-100 text-amber-700",
   PARSED: "bg-sky-100 text-sky-700",
+  MAPPING_REQUIRED: "bg-amber-100 text-amber-700",
   MAPPED: "bg-blue-100 text-blue-700",
   READY: "bg-emerald-100 text-emerald-700",
-  ERROR: "bg-rose-100 text-rose-700"
+  ERROR_FILE_INVALID: "bg-rose-100 text-rose-700",
+  ERROR_PARSE_FAILED: "bg-rose-100 text-rose-700"
 };
 
 type ReconStatus = "NOT_RUN" | "RUNNING" | "SUCCESS" | "FAILED";
@@ -139,7 +143,8 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
       REGISTER: [],
       BANK: [],
       GL: [],
-      STATUTORY: []
+      STATUTORY: [],
+      PENSION_SCHEDULE: []
     }
   );
 
@@ -157,12 +162,23 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
     REGISTER: "Register",
     BANK: "Bank / Payments",
     GL: "GL Journal",
-    STATUTORY: "Statutory Totals"
+    STATUTORY: "Statutory Totals",
+    PENSION_SCHEDULE: "Pension Schedule"
   };
 
   const checkLabels: Record<string, string> = {
     CHK_REGISTER_NET_TO_BANK_TOTAL: "Register vs Bank totals",
-    CHK_JOURNAL_DEBITS_EQUAL_CREDITS: "Journal balance"
+    CHK_JOURNAL_DEBITS_EQUAL_CREDITS: "Journal balance",
+    CHK_REGISTER_DEDUCTIONS_TO_STATUTORY_TOTALS: "Register vs Statutory totals",
+    CHK_REGISTER_GROSS_TO_JOURNAL_EXPENSE: "Register gross vs Journal expense",
+    CHK_REGISTER_EMPLOYER_COSTS_TO_JOURNAL_EXPENSE: "Register employer costs vs Journal",
+    CHK_REGISTER_NET_PAY_TO_JOURNAL_LIABILITY: "Register net pay vs Journal liability",
+    CHK_REGISTER_TAX_TO_JOURNAL_LIABILITY: "Register tax vs Journal liability",
+    CHK_REGISTER_PENSION_TO_JOURNAL_LIABILITY: "Register pension vs Journal liability",
+    CHK_REGISTER_PENSION_TO_PENSION_SCHEDULE: "Register pension vs Pension schedule",
+    CHK_BANK_DUPLICATE_PAYMENTS: "Bank duplicate payments",
+    CHK_BANK_NEGATIVE_PAYMENTS: "Bank negative payments",
+    CHK_BANK_PAYMENT_COUNT_MISMATCH: "Bank payment count"
   };
 
   const isLocked = payRun.status === "LOCKED" || payRun.status === "ARCHIVED";
@@ -192,12 +208,20 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
             Revision {payRun.revision} · {payRun.status}
           </p>
         </div>
-        <Link
-          href={`/clients/${payRun.clientId}` as Route}
-          className="rounded-lg border border-slate/30 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate hover:border-slate/60"
-        >
-          View client
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={`/clients/${payRun.clientId}` as Route}
+            className="rounded-lg border border-slate/30 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate hover:border-slate/60"
+          >
+            View client
+          </Link>
+          <Link
+            href={`/pay-runs/${payRun.id}/tolerances` as Route}
+            className="rounded-lg border border-slate/30 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate hover:border-slate/60"
+          >
+            Tolerances
+          </Link>
+        </div>
       </div>
 
       <div className="rounded-xl border border-slate/20 bg-surface p-6">
@@ -242,9 +266,27 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
                         </p>
                       )
                     ) : null}
+                    {latest &&
+                    (latest.parseStatus === "ERROR_FILE_INVALID" ||
+                      latest.parseStatus === "ERROR_PARSE_FAILED") ? (
+                      <p className="mt-1 text-xs text-rose-700">
+                        {latest.errorMessage ?? "Import failed validation."}
+                      </p>
+                    ) : null}
                     {latest ? (
                       <p className="mt-1 text-xs text-slate">
                         {latest.originalFilename} · {formatBytes(latest.sizeBytes)}
+                      </p>
+                    ) : null}
+                    {latest && latest.parseSummary ? (
+                      <p className="mt-1 text-xs text-slate">
+                        Parsed{" "}
+                        {(latest.parseSummary as { rowCount?: number }).rowCount ??
+                          "-"}{" "}
+                        rows ·{" "}
+                        {(latest.parseSummary as { columnCount?: number })
+                          .columnCount ?? "-"}{" "}
+                        columns
                       </p>
                     ) : null}
                   </div>

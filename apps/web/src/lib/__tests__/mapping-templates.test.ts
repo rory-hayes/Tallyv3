@@ -1134,4 +1134,97 @@ describe("mapping template versioning", () => {
       )
     ).rejects.toBeInstanceOf(NotFoundError);
   });
+
+  it("rejects applying templates to imports that failed validation", async () => {
+    const { firm, user } = await createFirmWithUser("ADMIN");
+    const client = await createClient(
+      { firmId: firm.id, userId: user.id },
+      {
+        name: "Error Import Client",
+        payrollSystem: "OTHER",
+        payrollSystemOther: "Other",
+        payrollFrequency: "MONTHLY"
+      }
+    );
+    const payRun = await createPayRun(
+      { firmId: firm.id, userId: user.id, role: "ADMIN" },
+      {
+        clientId: client.id,
+        periodStart: new Date("2026-10-01"),
+        periodEnd: new Date("2026-10-31")
+      }
+    );
+
+    const importRecord = await createImport(
+      { firmId: firm.id, userId: user.id, role: "ADMIN" },
+      {
+        payRunId: payRun.id,
+        sourceType: "REGISTER",
+        storageKey: buildStorageKey(firm.id, payRun.id, "REGISTER", "error.csv"),
+        fileHashSha256: await sha256FromString("register-error"),
+        originalFilename: "error.csv",
+        mimeType: "text/csv",
+        sizeBytes: 120
+      }
+    );
+
+    await prisma.import.update({
+      where: { id: importRecord.importRecord.id },
+      data: {
+        parseStatus: "ERROR_PARSE_FAILED",
+        errorCode: "ERROR_PARSE_FAILED",
+        errorMessage: "Failed to parse."
+      }
+    });
+
+    await expect(
+      applyMappingTemplate(
+        { firmId: firm.id, userId: user.id, role: "ADMIN" },
+        {
+          importId: importRecord.importRecord.id,
+          templateName: "Register Template",
+          sourceColumns: ["Employee", "Net"],
+          columnMap: {
+            employeeName: "Employee",
+            netPay: "Net"
+          }
+        }
+      )
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("returns early when updating to the same template status", async () => {
+    const { firm, user } = await createFirmWithUser("ADMIN");
+    const client = await createClient(
+      { firmId: firm.id, userId: user.id },
+      {
+        name: "Status Client",
+        payrollSystem: "OTHER",
+        payrollSystemOther: "Other",
+        payrollFrequency: "MONTHLY"
+      }
+    );
+    const template = await prisma.mappingTemplate.create({
+      data: {
+        firmId: firm.id,
+        clientId: client.id,
+        sourceType: "REGISTER",
+        name: "Status Template",
+        version: 1,
+        status: "ACTIVE",
+        sourceColumns: ["Employee"],
+        columnMap: { employeeName: "Employee" },
+        createdByUserId: user.id
+      }
+    });
+
+    const updated = await updateTemplateStatus(
+      { firmId: firm.id, userId: user.id, role: "ADMIN" },
+      template.id,
+      "ACTIVE"
+    );
+
+    expect(updated.status).toBe("ACTIVE");
+    expect(updated.id).toBe(template.id);
+  });
 });

@@ -64,15 +64,23 @@ enum SourceType {
   BANK
   GL
   STATUTORY
+  PENSION_SCHEDULE
 }
 
-enum ImportParseStatus {
+enum ImportStatus {
   UPLOADED
   PARSING
   PARSED
+  MAPPING_REQUIRED
   MAPPED
   READY
-  ERROR
+  ERROR_FILE_INVALID
+  ERROR_PARSE_FAILED
+}
+
+enum ImportErrorCode {
+  ERROR_FILE_INVALID
+  ERROR_PARSE_FAILED
 }
 
 enum MappingTemplateStatus {
@@ -101,9 +109,36 @@ enum CheckSeverity {
   CRITICAL
 }
 
+enum AccountClass {
+  EXPENSE
+  NET_PAYABLE
+  TAX_PAYABLE
+  NI_PRSI_PAYABLE
+  PENSION_PAYABLE
+  CASH
+  OTHER
+}
+
+enum ExpectedVarianceType {
+  DIRECTORS_SEPARATE
+  PENSION_SEPARATE
+  ROUNDING
+  OTHER
+}
+
 enum CheckType {
   CHK_REGISTER_NET_TO_BANK_TOTAL
   CHK_JOURNAL_DEBITS_EQUAL_CREDITS
+  CHK_REGISTER_DEDUCTIONS_TO_STATUTORY_TOTALS
+  CHK_REGISTER_GROSS_TO_JOURNAL_EXPENSE
+  CHK_REGISTER_EMPLOYER_COSTS_TO_JOURNAL_EXPENSE
+  CHK_REGISTER_NET_PAY_TO_JOURNAL_LIABILITY
+  CHK_REGISTER_TAX_TO_JOURNAL_LIABILITY
+  CHK_REGISTER_PENSION_TO_JOURNAL_LIABILITY
+  CHK_REGISTER_PENSION_TO_PENSION_SCHEDULE
+  CHK_BANK_DUPLICATE_PAYMENTS
+  CHK_BANK_NEGATIVE_PAYMENTS
+  CHK_BANK_PAYMENT_COUNT_MISMATCH
 }
 
 enum ExceptionStatus {
@@ -115,6 +150,7 @@ enum ExceptionStatus {
 
 enum ExceptionCategory {
   BANK_MISMATCH
+  BANK_DATA_QUALITY
   JOURNAL_MISMATCH
   STATUTORY_MISMATCH
   SANITY
@@ -136,6 +172,11 @@ enum AuditAction {
   PAY_RUN_REVISION_CREATED
   IMPORT_UPLOADED
   IMPORT_REPLACED
+  IMPORT_PARSING_STARTED
+  IMPORT_PARSED
+  IMPORT_MAPPING_SAVED
+  IMPORT_READY
+  IMPORT_ERROR
   IMPORT_DELETED
   TEMPLATE_CREATED
   TEMPLATE_VERSION_CREATED
@@ -153,6 +194,13 @@ enum AuditAction {
   PAY_RUN_REJECTED
   PACK_GENERATED
   PACK_LOCKED
+  PACK_DOWNLOADED
+  PACK_DOWNLOAD_FAILED
+  TOLERANCE_UPDATED
+  APPROVAL_SETTINGS_UPDATED
+  EXPECTED_VARIANCE_CREATED
+  EXPECTED_VARIANCE_UPDATED
+  EXPECTED_VARIANCE_ARCHIVED
 }
 
 enum AuditEntityType {
@@ -185,6 +233,8 @@ model Firm {
   mappingTemplates MappingTemplate[]
   reconciliationRuns ReconciliationRun[]
   exceptions Exception[]
+  accountClassifications AccountClassification[]
+  expectedVariances ExpectedVariance[]
   auditEvents AuditEvent[]
 }
 
@@ -211,6 +261,7 @@ model User {
   approvals Approval[] @relation("ApprovalReviewer")
   generatedPacks Pack[] @relation("PackGeneratedBy")
   lockedPacks Pack[] @relation("PackLockedBy")
+  expectedVariances ExpectedVariance[] @relation("ExpectedVarianceCreatedBy")
 }
 
 model Invite {
@@ -240,6 +291,7 @@ model Client {
   payrollFrequency      PayrollFrequency
   defaultReviewerUserId String?          @db.Uuid
   defaultReviewer       User?            @relation("ClientDefaultReviewer", fields: [defaultReviewerUserId], references: [id])
+  settings              Json?
   archivedAt            DateTime?
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
@@ -247,9 +299,47 @@ model Client {
   payRuns PayRun[]
   imports Import[]
   mappingTemplates MappingTemplate[]
+  accountClassifications AccountClassification[]
+  expectedVariances ExpectedVariance[]
 
   @@index([firmId])
   @@index([defaultReviewerUserId])
+}
+
+model AccountClassification {
+  id             String       @id @default(uuid()) @db.Uuid
+  firmId         String       @db.Uuid
+  firm           Firm         @relation(fields: [firmId], references: [id])
+  clientId       String       @db.Uuid
+  client         Client       @relation(fields: [clientId], references: [id])
+  accountCode    String
+  accountName    String?
+  classification AccountClass
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([clientId, accountCode])
+  @@index([firmId, clientId])
+}
+
+model ExpectedVariance {
+  id             String              @id @default(uuid()) @db.Uuid
+  firmId         String              @db.Uuid
+  firm           Firm                @relation(fields: [firmId], references: [id])
+  clientId       String              @db.Uuid
+  client         Client              @relation(fields: [clientId], references: [id])
+  checkType      CheckType?
+  varianceType   ExpectedVarianceType
+  condition      Json?
+  effect         Json?
+  active         Boolean             @default(true)
+  createdByUserId String             @db.Uuid
+  createdByUser  User                @relation("ExpectedVarianceCreatedBy", fields: [createdByUserId], references: [id])
+  archivedAt     DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([firmId, clientId])
 }
 
 model PayRun {
@@ -263,6 +353,7 @@ model PayRun {
   periodLabel String
   revision    Int          @default(1)
   status      PayRunStatus @default(DRAFT)
+  settings    Json?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -295,7 +386,9 @@ model Import {
   uploadedByUserId       String            @db.Uuid
   uploadedByUser         User              @relation(fields: [uploadedByUserId], references: [id])
   uploadedAt             DateTime          @default(now())
-  parseStatus            ImportParseStatus @default(UPLOADED)
+  parseStatus            ImportStatus      @default(UPLOADED)
+  errorCode              ImportErrorCode?
+  errorMessage           String?
   mappingTemplateVersionId String?         @db.Uuid
   mappingTemplateVersion   MappingTemplate? @relation(fields: [mappingTemplateVersionId], references: [id])
   normalizedDatasetId    String?           @db.Uuid
@@ -444,6 +537,10 @@ model Pack {
   reconciliationRun   ReconciliationRun @relation(fields: [reconciliationRunId], references: [id])
   packVersion         Int
   storageUriPdf       String
+  storageKeyPdf       String?
+  contentType         String?
+  sizeBytes           Int?
+  fileHashSha256      String?
   storageUriBundle    String?
   metadata            Json
   generatedAt         DateTime          @default(now())

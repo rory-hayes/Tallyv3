@@ -40,6 +40,10 @@ Exports are inconsistent. Mapping templates normalize them into a stable interna
 - Category
 - Amount
 
+**Pension Schedule (optional)**
+- Pension total OR employee/employer pension amounts
+- Employee identifier (optional)
+
 ## Normalized schemas (MVP)
 Use these canonical tables/records.
 
@@ -75,6 +79,14 @@ Use these canonical tables/records.
 - row_number
 - category (string)
 - amount (decimal)
+
+### NormalizedPensionScheduleRow
+- import_id
+- row_number
+- employee_key (string, optional)
+- pension_employee (decimal, optional)
+- pension_employer (decimal, optional)
+- pension_total (decimal, optional)
 
 ## Template drift detection (v1+)
 When a new file is uploaded:

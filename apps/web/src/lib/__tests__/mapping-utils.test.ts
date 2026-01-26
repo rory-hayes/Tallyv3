@@ -73,6 +73,31 @@ describe("mapping validation", () => {
     expect(result.errors[0]).toContain("No columns");
   });
 
+  it("requires pension amounts for pension schedules", () => {
+    const result = validateColumnMap(
+      "PENSION_SCHEDULE",
+      {
+        employeeName: "Employee"
+      },
+      ["Employee", "Total"]
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.includes("Pension amount"))).toBe(
+      true
+    );
+  });
+
+  it("accepts pension schedule totals", () => {
+    const result = validateColumnMap(
+      "PENSION_SCHEDULE",
+      {
+        amount: "Total"
+      },
+      ["Employee", "Total"]
+    );
+    expect(result.valid).toBe(true);
+  });
+
   it("flags missing mapped columns", () => {
     const result = validateColumnMap(
       "STATUTORY",

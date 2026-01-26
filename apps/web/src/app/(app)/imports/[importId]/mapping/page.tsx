@@ -13,7 +13,8 @@ const sourceLabels: Record<SourceType, string> = {
   REGISTER: "Register",
   BANK: "Bank / Payments",
   GL: "GL Journal",
-  STATUTORY: "Statutory Totals"
+  STATUTORY: "Statutory Totals",
+  PENSION_SCHEDULE: "Pension Schedule"
 };
 
 export default async function ImportMappingPage({
@@ -29,7 +30,8 @@ export default async function ImportMappingPage({
     include: {
       payRun: {
         include: {
-          client: true
+          client: true,
+          firm: true
         }
       }
     }
@@ -63,7 +65,8 @@ export default async function ImportMappingPage({
     status: template.status,
     clientId: template.clientId,
     sourceColumns: template.sourceColumns as string[],
-    columnMap: template.columnMap as Record<string, string | null>
+    columnMap: template.columnMap as Record<string, string | null>,
+    normalizationRules: template.normalizationRules as Record<string, unknown> | null
   }));
 
   const defaultTemplateName = `${importRecord.payRun.client.name} ${sourceLabels[importRecord.sourceType]}`;
@@ -71,7 +74,13 @@ export default async function ImportMappingPage({
   const parsingBlocked =
     importRecord.parseStatus === "UPLOADED" ||
     importRecord.parseStatus === "PARSING";
-  const errorBlocked = importRecord.parseStatus === "ERROR";
+  const errorBlocked =
+    importRecord.parseStatus === "ERROR_FILE_INVALID" ||
+    importRecord.parseStatus === "ERROR_PARSE_FAILED";
+  const errorMessage =
+    importRecord.errorMessage ??
+    (importRecord.parseSummary as { error?: string } | null)?.error ??
+    "This import failed validation. Re-upload the file before mapping.";
 
   return (
     <div className="space-y-6">
@@ -102,13 +111,14 @@ export default async function ImportMappingPage({
         </div>
       ) : errorBlocked ? (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          This import failed validation. Re-upload the file before mapping.
+          {errorMessage}
         </div>
       ) : (
         <MappingWizard
           importId={importRecord.id}
           payRunId={importRecord.payRunId}
           sourceType={importRecord.sourceType}
+          region={importRecord.payRun.firm.region}
           defaultTemplateName={defaultTemplateName}
           templates={latestTemplates}
         />

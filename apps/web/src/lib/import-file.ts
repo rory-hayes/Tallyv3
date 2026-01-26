@@ -5,17 +5,21 @@ import type { Readable } from "stream";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { ValidationError } from "./errors";
+import { validateImportBuffer } from "./import-validation";
 import { storageBucket, storageClient } from "./storage";
 
 export type ImportFileData = {
   rows: string[][];
   sheetNames: string[];
   sheetName: string | null;
+  rowCount: number;
+  columnCount: number;
 };
 
 type ImportFileRecord = {
   storageUri: string;
   originalFilename: string;
+  mimeType?: string | null;
 };
 
 type ImportFileOptions = {
@@ -86,6 +90,11 @@ export const readImportFile = async (
   );
 
   const buffer = await bodyToBuffer(object.Body);
+  const validation = validateImportBuffer({
+    buffer,
+    fileName: importRecord.originalFilename,
+    mimeType: importRecord.mimeType ?? undefined
+  });
   const lowerName = importRecord.originalFilename.toLowerCase();
   const { sheetName, maxRows } = options;
 
@@ -121,7 +130,9 @@ export const readImportFile = async (
     return {
       rows: normalizeRows(limitedRows),
       sheetNames,
-      sheetName: activeSheet
+      sheetName: activeSheet,
+      rowCount: validation.rowCount,
+      columnCount: validation.columnCount
     };
   }
 
@@ -139,6 +150,8 @@ export const readImportFile = async (
   return {
     rows: normalizeRows(parsed.data as unknown[][]),
     sheetNames: [],
-    sheetName: null
+    sheetName: null,
+    rowCount: validation.rowCount,
+    columnCount: validation.columnCount
   };
 };

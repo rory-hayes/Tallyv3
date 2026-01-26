@@ -2,10 +2,11 @@ import "server-only";
 
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { ValidationError } from "./errors";
+import { ImportFileInvalidError, ImportParseError } from "./errors";
 import { env } from "./env";
 
 export type ImportFileKind = "CSV" | "XLSX";
+export type ImportValidationMode = "upload" | "parse";
 
 type ImportValidationResult = {
   kind: ImportFileKind;
@@ -55,7 +56,7 @@ const detectFileKind = (fileName: string, mimeType?: string): ImportFileKind => 
     return "XLSX";
   }
   if (extension === ".xls") {
-    throw new ValidationError(
+    throw new ImportFileInvalidError(
       "Legacy .xls files are not supported. Export as CSV or XLSX."
     );
   }
@@ -68,16 +69,16 @@ const detectFileKind = (fileName: string, mimeType?: string): ImportFileKind => 
     return "XLSX";
   }
   if (mimeType === "application/vnd.ms-excel") {
-    throw new ValidationError(
+    throw new ImportFileInvalidError(
       "Unsupported Excel format. Export the file as CSV or XLSX."
     );
   }
-  throw new ValidationError("Unsupported file type. Upload CSV or XLSX.");
+  throw new ImportFileInvalidError("Unsupported file type. Upload CSV or XLSX.");
 };
 
 const assertMaxSize = (sizeBytes: number) => {
   if (sizeBytes > MAX_BYTES) {
-    throw new ValidationError(
+    throw new ImportFileInvalidError(
       `File exceeds the ${formatBytes(MAX_BYTES)} limit.`
     );
   }
@@ -87,7 +88,7 @@ const assertZipSignature = (buffer: Buffer) => {
   const head = buffer.subarray(0, 4);
   const isZip = ZIP_MAGIC.some((magic) => head.equals(magic));
   if (!isZip) {
-    throw new ValidationError(
+    throw new ImportFileInvalidError(
       "Invalid Excel file. The file signature does not match XLSX."
     );
   }
@@ -95,7 +96,7 @@ const assertZipSignature = (buffer: Buffer) => {
 
 const assertWorkbookXmlPresent = (buffer: Buffer) => {
   if (!buffer.includes("xl/workbook.xml")) {
-    throw new ValidationError(
+    throw new ImportFileInvalidError(
       "Invalid Excel file. The workbook definition is missing."
     );
   }
@@ -103,11 +104,13 @@ const assertWorkbookXmlPresent = (buffer: Buffer) => {
 
 const assertTextLike = (buffer: Buffer) => {
   if (buffer.includes(0x00)) {
-    throw new ValidationError("Invalid CSV file. The file appears to be binary.");
+    throw new ImportFileInvalidError(
+      "Invalid CSV file. The file appears to be binary."
+    );
   }
   const text = buffer.toString("utf8");
   if (text.includes("\uFFFD")) {
-    throw new ValidationError(
+    throw new ImportFileInvalidError(
       "Invalid CSV file. Use UTF-8 encoding and retry."
     );
   }
@@ -116,18 +119,18 @@ const assertTextLike = (buffer: Buffer) => {
 
 const assertRowAndColumnLimits = (rowCount: number, columnCount: number) => {
   if (rowCount === 0) {
-    throw new ValidationError("Invalid file. No rows were detected.");
+    throw new ImportParseError("Invalid file. No rows were detected.");
   }
   if (columnCount === 0) {
-    throw new ValidationError("Invalid file. No columns were detected.");
+    throw new ImportParseError("Invalid file. No columns were detected.");
   }
   if (rowCount > MAX_ROWS) {
-    throw new ValidationError(
+    throw new ImportFileInvalidError(
       `File exceeds the ${MAX_ROWS.toLocaleString("en-GB")} row limit.`
     );
   }
   if (columnCount > MAX_COLUMNS) {
-    throw new ValidationError(
+    throw new ImportFileInvalidError(
       `File exceeds the ${MAX_COLUMNS.toLocaleString("en-GB")} column limit.`
     );
   }
@@ -174,11 +177,11 @@ export const validateImportBuffer = ({
     try {
       workbook = XLSX.read(buffer, { type: "buffer" });
     } catch (error) {
-      throw new ValidationError("Invalid Excel file. Unable to read workbook.");
+      throw new ImportParseError("Invalid Excel file. Unable to read workbook.");
     }
 
     if (workbook.SheetNames.length === 0) {
-      throw new ValidationError("Invalid Excel file. No worksheets were found.");
+      throw new ImportParseError("Invalid Excel file. No worksheets were found.");
     }
 
     const { maxRows, maxCols } = extractSheetBounds(workbook);
@@ -193,23 +196,28 @@ export const validateImportBuffer = ({
   }
 
   if (buffer.subarray(0, 4).equals(OLE_MAGIC)) {
-    throw new ValidationError(
+    throw new ImportFileInvalidError(
       "Legacy .xls files are not supported. Export as CSV or XLSX."
     );
   }
   if (buffer.subarray(0, 5).equals(PDF_MAGIC)) {
-    throw new ValidationError(
+    throw new ImportFileInvalidError(
       "Invalid CSV file. PDF detected; export as CSV or XLSX."
     );
   }
   if (ZIP_MAGIC.some((magic) => buffer.subarray(0, 4).equals(magic))) {
-    throw new ValidationError("Invalid CSV file. The file appears to be zipped.");
+    throw new ImportFileInvalidError(
+      "Invalid CSV file. The file appears to be zipped."
+    );
   }
 
   const text = assertTextLike(buffer);
+  if (text.trim().length === 0) {
+    throw new ImportParseError("Invalid file. No rows were detected.");
+  }
   const parsed = Papa.parse<string[]>(text, { skipEmptyLines: true });
   if (parsed.errors.length > 0) {
-    throw new ValidationError("Invalid CSV file. Unable to parse the file.");
+    throw new ImportParseError("Invalid CSV file. Unable to parse the file.");
   }
   const rows = parsed.data as unknown[][];
   const rowCount = rows.length;
@@ -225,6 +233,64 @@ export const validateImportBuffer = ({
     rowCount,
     columnCount
   };
+};
+
+export const validateImportBufferForUpload = ({
+  buffer,
+  fileName,
+  mimeType,
+  sizeBytes
+}: {
+  buffer: Buffer;
+  fileName: string;
+  mimeType?: string;
+  sizeBytes?: number;
+}): ImportValidationResult => {
+  const actualSize = sizeBytes ?? buffer.length;
+  assertMaxSize(actualSize);
+
+  const kind = detectFileKind(fileName, mimeType);
+
+  if (kind === "XLSX") {
+    assertZipSignature(buffer);
+    assertWorkbookXmlPresent(buffer);
+    return { kind, rowCount: 0, columnCount: 0 };
+  }
+
+  if (buffer.subarray(0, 4).equals(OLE_MAGIC)) {
+    throw new ImportFileInvalidError(
+      "Legacy .xls files are not supported. Export as CSV or XLSX."
+    );
+  }
+  if (buffer.subarray(0, 5).equals(PDF_MAGIC)) {
+    throw new ImportFileInvalidError(
+      "Invalid CSV file. PDF detected; export as CSV or XLSX."
+    );
+  }
+  if (ZIP_MAGIC.some((magic) => buffer.subarray(0, 4).equals(magic))) {
+    throw new ImportFileInvalidError(
+      "Invalid CSV file. The file appears to be zipped."
+    );
+  }
+
+  const text = assertTextLike(buffer);
+  if (text.trim().length === 0) {
+    throw new ImportParseError("Invalid file. No rows were detected.");
+  }
+  const parsed = Papa.parse<string[]>(text, { skipEmptyLines: true });
+  if (parsed.errors.length > 0) {
+    throw new ImportParseError("Invalid CSV file. Unable to parse the file.");
+  }
+  const rows = parsed.data as unknown[][];
+  const rowCount = rows.length;
+  const columnCount = rows.reduce(
+    (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
+    0
+  );
+
+  assertRowAndColumnLimits(rowCount, columnCount);
+
+  return { kind, rowCount, columnCount };
 };
 
 export const importValidationLimits = {

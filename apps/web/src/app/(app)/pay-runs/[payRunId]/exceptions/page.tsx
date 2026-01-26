@@ -67,14 +67,24 @@ export default async function PayRunExceptionsPage({
               <th className="px-4 py-3">Severity</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Assignee</th>
+              <th className="px-4 py-3">Last update</th>
               <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {exceptions.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-sm text-slate">
-                  No exceptions for this pay run yet.
+                <td colSpan={6} className="px-4 py-6 text-sm text-slate">
+                  <p>No exceptions for this pay run yet.</p>
+                  <p className="mt-1 text-xs text-slate">
+                    Exceptions are generated when reconciliation checks fail.
+                  </p>
+                  <Link
+                    href={`/pay-runs/${payRun.id}` as Route}
+                    className="mt-3 inline-flex text-xs font-semibold uppercase tracking-wide text-accent hover:text-accent-strong"
+                  >
+                    Back to pay run
+                  </Link>
                 </td>
               </tr>
             ) : (
@@ -88,6 +98,12 @@ export default async function PayRunExceptionsPage({
                   <td className="px-4 py-3 text-slate">{exception.status}</td>
                   <td className="px-4 py-3 text-slate">
                     {exception.assignedToUser?.email ?? "Unassigned"}
+                  </td>
+                  <td className="px-4 py-3 text-slate">
+                    {exception.updatedAt.toLocaleString("en-GB", {
+                      dateStyle: "medium",
+                      timeStyle: "short"
+                    })}
                   </td>
                   <td className="px-4 py-3">
                     <Link

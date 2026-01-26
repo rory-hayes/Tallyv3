@@ -78,6 +78,23 @@ export const mappingFieldConfigs: Record<SourceType, MappingFieldConfig> = {
       { key: "amount", label: "Amount", kind: "number", required: true }
     ],
     requiredFields: ["category", "amount"]
+  },
+  PENSION_SCHEDULE: {
+    fields: [
+      { key: "employeeId", label: "Employee ID", kind: "string" },
+      { key: "employeeName", label: "Employee name", kind: "string" },
+      { key: "amount", label: "Pension total", kind: "number", group: "pension" },
+      { key: "pensionEmployee", label: "Pension employee", kind: "number", group: "pension" },
+      { key: "pensionEmployer", label: "Pension employer", kind: "number", group: "pension" }
+    ],
+    requiredFields: [],
+    requiredGroups: [
+      {
+        id: "pension",
+        label: "Pension amount",
+        fields: ["amount", "pensionEmployee", "pensionEmployer"]
+      }
+    ]
   }
 };
 

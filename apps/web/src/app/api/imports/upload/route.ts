@@ -6,12 +6,12 @@ import { PermissionError, requirePermission } from "@/lib/permissions";
 import { assertStorageKeyMatches, isAllowedUpload } from "@/lib/imports";
 import { storageBucket, storageClient } from "@/lib/storage";
 import { logServerError } from "@/lib/server-errors";
-import { validateImportBuffer } from "@/lib/import-validation";
+import { validateImportBufferForUpload } from "@/lib/import-validation";
 import { ValidationError } from "@/lib/errors";
 
 const uploadSchema = z.object({
   payRunId: z.string().uuid(),
-  sourceType: z.enum(["REGISTER", "BANK", "GL", "STATUTORY"]),
+  sourceType: z.enum(["REGISTER", "BANK", "GL", "STATUTORY", "PENSION_SCHEDULE"]),
   storageKey: z.string().min(1),
   originalFilename: z.string().min(1),
   mimeType: z.string().optional().default("application/octet-stream")
@@ -57,7 +57,7 @@ export const POST = async (request: Request) => {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     try {
-      validateImportBuffer({
+      validateImportBufferForUpload({
         buffer,
         fileName: originalFilename,
         mimeType,

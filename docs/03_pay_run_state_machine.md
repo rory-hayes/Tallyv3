@@ -38,6 +38,7 @@ Firm/client config determines required sources. Default:
 Additional gates:
 - No unresolved **CRITICAL** exceptions unless preparer adds override note.
 - Mapping templates valid for each included import.
+- Reviewer cannot approve their own submission unless firm settings allow self-approval.
 
 ## Revision policy (important)
 - If a pay run is **LOCKED**, any change requires creating a **new revision**.

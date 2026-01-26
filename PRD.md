@@ -49,6 +49,8 @@ Today this is done with spreadsheets, screenshots, and ad hoc checklists—slow,
   - Bank/Payments (file or payment summary)
   - GL Journal
   - Statutory Totals summary
+- Optional source:
+  - Pension Schedule
 - Mapping templates with validation + preview
 - Reconciliation checks (totals-first) producing structured exceptions
 - Exception workflow (triage, assign, resolve with notes/attachments)

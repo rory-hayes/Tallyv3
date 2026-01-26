@@ -12,7 +12,8 @@ const sourceLabels: Record<SourceType, string> = {
   REGISTER: "Register",
   BANK: "Bank / Payments",
   GL: "GL Journal",
-  STATUTORY: "Statutory Totals"
+  STATUTORY: "Statutory Totals",
+  PENSION_SCHEDULE: "Pension Schedule"
 };
 
 const statusLabels: Record<MappingTemplateStatus, string> = {
@@ -39,7 +40,8 @@ const sourceOptions = [
   { value: "REGISTER", label: "Register" },
   { value: "BANK", label: "Bank / Payments" },
   { value: "GL", label: "GL Journal" },
-  { value: "STATUTORY", label: "Statutory Totals" }
+  { value: "STATUTORY", label: "Statutory Totals" },
+  { value: "PENSION_SCHEDULE", label: "Pension Schedule" }
 ];
 
 export default async function TemplatesPage({ searchParams }: TemplatesPageProps) {

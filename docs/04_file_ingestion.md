@@ -1,11 +1,13 @@
 # File Ingestion (MVP)
 
 ## Scope
-MVP supports manual file uploads for four source types:
+MVP supports manual file uploads for four core source types:
 - Payroll Register
 - Bank/Payments (BACS/SEPA file OR payment summary export)
 - GL Journal
 - Statutory Totals
+Optional source:
+- Pension Schedule (optional; ties back to register pension totals)
 
 No external APIs required in MVP.
 

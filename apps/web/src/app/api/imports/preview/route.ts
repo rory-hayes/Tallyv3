@@ -35,7 +35,8 @@ export const POST = async (request: Request) => {
     const preview = await getImportPreview(
       session.firmId,
       parsed.data.importId,
-      parsed.data.sheetName
+      parsed.data.sheetName,
+      session.userId
     );
     return NextResponse.json(preview);
   } catch (error) {

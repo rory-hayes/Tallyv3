@@ -195,6 +195,11 @@ describe("reconciliation run", () => {
         register: registerStorageKey,
         bank: bankStorageKey,
         gl: glStorageKey
+      },
+      imports: {
+        register: registerImport.importRecord,
+        bank: bankImport.importRecord,
+        gl: glImport.importRecord
       }
     };
   };
@@ -228,7 +233,7 @@ describe("reconciliation run", () => {
     const checkCount = await prisma.checkResult.count({
       where: { reconciliationRunId: run?.id }
     });
-    expect(checkCount).toBe(2);
+    expect(checkCount).toBe(12);
 
     const exceptionCount = await prisma.exception.count({
       where: { reconciliationRunId: run?.id }
@@ -322,6 +327,360 @@ describe("reconciliation run", () => {
     expect(exceptions).toBe(0);
   });
 
+  it("creates statutory mismatch exceptions when totals differ", async () => {
+    const { firm, user, payRun, storageKeys } = await setupPayRun();
+
+    const statutoryStorageKey = buildStorageKey(
+      firm.id,
+      payRun.id,
+      "STATUTORY",
+      "statutory.csv"
+    );
+    const statutoryImport = await createParsedImport(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        payRunId: payRun.id,
+        sourceType: "STATUTORY",
+        storageKey: statutoryStorageKey,
+        fileHashSha256: await sha256FromString("statutory"),
+        originalFilename: "statutory.csv",
+        mimeType: "text/csv",
+        sizeBytes: 120
+      }
+    );
+
+    await applyMappingTemplate(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        importId: statutoryImport.importRecord.id,
+        templateName: "Statutory Template",
+        sourceColumns: ["Category", "Amount"],
+        columnMap: {
+          category: "Category",
+          amount: "Amount"
+        },
+        normalizationRules: {
+          categoryMap: {
+            paye: "TAX_PRIMARY"
+          }
+        }
+      }
+    );
+
+    const contents = new Map<string, string>();
+    contents.set(storageKeys.register, "Employee,Net,Tax\nA,100,10\nB,200,20\n");
+    contents.set(storageKeys.bank, "Payee,Amount\nA,100\nB,200\n");
+    contents.set(storageKeys.gl, "Account,Signed\nPayroll,300\nClearing,(300)\n");
+    contents.set(statutoryStorageKey, "Category,Amount\nPAYE,5\n");
+    mockStorage(contents);
+
+    await runReconciliation(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id
+    );
+
+    const statutoryException = await prisma.exception.findFirst({
+      where: {
+        payRunId: payRun.id,
+        category: "STATUTORY_MISMATCH"
+      }
+    });
+    expect(statutoryException).not.toBeNull();
+  });
+
+  it("warns when the pension schedule import is missing", async () => {
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun();
+
+    await applyMappingTemplate(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        importId: imports.register.id,
+        templateName: "Register Template",
+        sourceColumns: [
+          "Employee",
+          "Net",
+          "Tax",
+          "Pension Employee",
+          "Pension Employer"
+        ],
+        columnMap: {
+          employeeName: "Employee",
+          netPay: "Net",
+          tax1: "Tax",
+          pensionEmployee: "Pension Employee",
+          pensionEmployer: "Pension Employer"
+        }
+      }
+    );
+
+    const contents = new Map<string, string>();
+    contents.set(
+      storageKeys.register,
+      "Employee,Net,Tax,Pension Employee,Pension Employer\nA,100,10,5,5\nB,200,20,5,5\n"
+    );
+    contents.set(storageKeys.bank, "Payee,Amount\nA,100\nB,200\n");
+    contents.set(storageKeys.gl, "Account,Signed\nPayroll,300\nClearing,(300)\n");
+    mockStorage(contents);
+
+    await runReconciliation(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id
+    );
+
+    const run = await prisma.reconciliationRun.findFirst({
+      where: { payRunId: payRun.id },
+      orderBy: { runNumber: "desc" }
+    });
+    const checkResult = await prisma.checkResult.findFirst({
+      where: {
+        reconciliationRunId: run?.id,
+        checkType: "CHK_REGISTER_PENSION_TO_PENSION_SCHEDULE"
+      }
+    });
+    expect(checkResult?.status).toBe("WARN");
+    expect(checkResult?.summary).toContain("Pension schedule import is missing");
+
+    const exception = checkResult
+      ? await prisma.exception.findFirst({
+          where: { checkResultId: checkResult.id }
+        })
+      : null;
+    expect(exception).toBeNull();
+  });
+
+  it("creates pension schedule mismatch exceptions when totals differ", async () => {
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun();
+
+    const scheduleStorageKey = buildStorageKey(
+      firm.id,
+      payRun.id,
+      "PENSION_SCHEDULE",
+      "pension.csv"
+    );
+    const scheduleImport = await createParsedImport(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        payRunId: payRun.id,
+        sourceType: "PENSION_SCHEDULE",
+        storageKey: scheduleStorageKey,
+        fileHashSha256: await sha256FromString("pension"),
+        originalFilename: "pension.csv",
+        mimeType: "text/csv",
+        sizeBytes: 120
+      }
+    );
+
+    await applyMappingTemplate(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        importId: imports.register.id,
+        templateName: "Register Template",
+        sourceColumns: [
+          "Employee",
+          "Net",
+          "Tax",
+          "Pension Employee",
+          "Pension Employer"
+        ],
+        columnMap: {
+          employeeName: "Employee",
+          netPay: "Net",
+          tax1: "Tax",
+          pensionEmployee: "Pension Employee",
+          pensionEmployer: "Pension Employer"
+        }
+      }
+    );
+
+    await applyMappingTemplate(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        importId: scheduleImport.importRecord.id,
+        templateName: "Pension Schedule Template",
+        sourceColumns: ["Employee", "Total"],
+        columnMap: {
+          employeeName: "Employee",
+          amount: "Total"
+        }
+      }
+    );
+
+    const contents = new Map<string, string>();
+    contents.set(
+      storageKeys.register,
+      "Employee,Net,Tax,Pension Employee,Pension Employer\nA,100,10,10,10\nB,200,20,10,10\n"
+    );
+    contents.set(storageKeys.bank, "Payee,Amount\nA,100\nB,200\n");
+    contents.set(storageKeys.gl, "Account,Signed\nPayroll,300\nClearing,(300)\n");
+    contents.set(scheduleStorageKey, "Employee,Total\nA,10\nB,10\n");
+    mockStorage(contents);
+
+    await runReconciliation(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id
+    );
+
+    const run = await prisma.reconciliationRun.findFirst({
+      where: { payRunId: payRun.id },
+      orderBy: { runNumber: "desc" }
+    });
+    const checkResult = await prisma.checkResult.findFirst({
+      where: {
+        reconciliationRunId: run?.id,
+        checkType: "CHK_REGISTER_PENSION_TO_PENSION_SCHEDULE"
+      }
+    });
+    expect(checkResult?.status).toBe("FAIL");
+
+    const exception = checkResult
+      ? await prisma.exception.findFirst({
+          where: { checkResultId: checkResult.id, category: "SANITY" }
+        })
+      : null;
+    expect(exception).not.toBeNull();
+  });
+
+  it("creates journal mismatch exceptions for misallocated totals", async () => {
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun();
+
+    await applyMappingTemplate(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        importId: imports.register.id,
+        templateName: "Register Template",
+        sourceColumns: ["Employee", "Net", "Gross", "Tax"],
+        columnMap: {
+          employeeName: "Employee",
+          netPay: "Net",
+          grossPay: "Gross",
+          tax1: "Tax"
+        }
+      }
+    );
+
+    await prisma.accountClassification.createMany({
+      data: [
+        {
+          firmId: firm.id,
+          clientId: payRun.clientId,
+          accountCode: "Payroll Expense",
+          classification: "EXPENSE"
+        },
+        {
+          firmId: firm.id,
+          clientId: payRun.clientId,
+          accountCode: "Net Wages",
+          classification: "NET_PAYABLE"
+        },
+        {
+          firmId: firm.id,
+          clientId: payRun.clientId,
+          accountCode: "Tax Payable",
+          classification: "TAX_PAYABLE"
+        },
+        {
+          firmId: firm.id,
+          clientId: payRun.clientId,
+          accountCode: "Clearing",
+          classification: "CASH"
+        }
+      ]
+    });
+
+    const contents = new Map<string, string>();
+    contents.set(
+      storageKeys.register,
+      "Employee,Net,Gross,Tax\nA,150,200,50\nB,150,200,50\n"
+    );
+    contents.set(storageKeys.bank, "Payee,Amount\nA,150\nB,150\n");
+    contents.set(
+      storageKeys.gl,
+      "Account,Signed\nPayroll Expense,350\nNet Wages,300\nTax Payable,100\nClearing,(750)\n"
+    );
+    mockStorage(contents);
+
+    await runReconciliation(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id
+    );
+
+    const checkResult = await prisma.checkResult.findFirst({
+      where: {
+        reconciliationRun: { payRunId: payRun.id },
+        checkType: "CHK_REGISTER_GROSS_TO_JOURNAL_EXPENSE"
+      }
+    });
+    expect(checkResult?.status).toBe("FAIL");
+  });
+
+  it("flags duplicate and negative bank payments in reconciliation", async () => {
+    const { firm, user, payRun, storageKeys } = await setupPayRun();
+
+    const contents = new Map<string, string>();
+    contents.set(storageKeys.register, "Employee,Net,Tax\nA,150,0\n");
+    contents.set(
+      storageKeys.bank,
+      "Payee,Amount\nA,100\nA,100\nB,-50\n"
+    );
+    contents.set(storageKeys.gl, "Account,Signed\nPayroll,150\nClearing,(150)\n");
+    mockStorage(contents);
+
+    await runReconciliation(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id
+    );
+
+    const bankExceptions = await prisma.exception.findMany({
+      where: {
+        payRunId: payRun.id,
+        category: "BANK_DATA_QUALITY"
+      }
+    });
+    expect(bankExceptions.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("downgrades mismatches when expected variance applies", async () => {
+    const { firm, user, payRun, storageKeys } = await setupPayRun();
+
+    await prisma.expectedVariance.create({
+      data: {
+        firmId: firm.id,
+        clientId: payRun.clientId,
+        checkType: "CHK_REGISTER_NET_TO_BANK_TOTAL",
+        varianceType: "ROUNDING",
+        condition: { amountBounds: { max: 5 } },
+        effect: { downgradeTo: "WARN" },
+        active: true,
+        createdByUserId: user.id
+      }
+    });
+
+    const contents = new Map<string, string>();
+    contents.set(storageKeys.register, "Employee,Net,Tax\nA,50,0\nB,50,0\n");
+    contents.set(storageKeys.bank, "Payee,Amount\nBatch,95\n");
+    contents.set(storageKeys.gl, "Account,Signed\nPayroll,100\nClearing,(100)\n");
+    mockStorage(contents);
+
+    await runReconciliation(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id
+    );
+
+    const checkResult = await prisma.checkResult.findFirst({
+      where: {
+        reconciliationRun: { payRunId: payRun.id },
+        checkType: "CHK_REGISTER_NET_TO_BANK_TOTAL"
+      }
+    });
+
+    expect(checkResult?.status).toBe("WARN");
+
+    const exceptions = await prisma.exception.findMany({
+      where: { payRunId: payRun.id }
+    });
+    expect(exceptions.length).toBe(0);
+  });
+
   it("uses the IE bundle for Irish firms", async () => {
     const { firm, user, payRun, storageKeys } = await setupPayRun({
       region: "IE"
@@ -349,6 +708,37 @@ describe("reconciliation run", () => {
     });
     expect(run?.bundleId).toBe("BUNDLE_IE");
     expect(run?.bundleVersion).toBe("V1");
+  });
+
+  it("requires statutory imports when configured", async () => {
+    const { firm, user, payRun, storageKeys } = await setupPayRun();
+
+    await prisma.firm.update({
+      where: { id: firm.id },
+      data: {
+        defaults: {
+          requiredSources: {
+            register: true,
+            bank: true,
+            gl: true,
+            statutory: true
+          }
+        }
+      }
+    });
+
+    const contents = new Map<string, string>();
+    contents.set(storageKeys.register, "Employee,Net,Tax\nA,100,10\nB,200,20\n");
+    contents.set(storageKeys.bank, "Payee,Amount\nA,100\nB,200\n");
+    contents.set(storageKeys.gl, "Account,Signed\nPayroll,300\nClearing,(300)\n");
+    mockStorage(contents);
+
+    await expect(
+      runReconciliation(
+        { firmId: firm.id, userId: user.id, role: user.role },
+        payRun.id
+      )
+    ).rejects.toBeInstanceOf(ValidationError);
   });
 
   it("blocks reconciliation on locked pay runs", async () => {

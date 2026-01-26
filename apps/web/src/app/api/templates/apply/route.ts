@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
+import type { Prisma } from "@/lib/prisma";
 import { PermissionError, requirePermission } from "@/lib/permissions";
 import { applyMappingTemplate } from "@/lib/mapping-templates";
 import { NotFoundError, ValidationError, ConflictError } from "@/lib/errors";
@@ -11,6 +12,7 @@ const applySchema = z.object({
   templateName: z.string().min(2).optional(),
   sourceColumns: z.array(z.string().min(1)),
   columnMap: z.record(z.string(), z.string().nullable().optional()),
+  normalizationRules: z.record(z.string(), z.unknown()).optional().nullable(),
   headerRowIndex: z.number().int().nonnegative().optional(),
   sheetName: z.string().optional().nullable(),
   createNewVersion: z.boolean().optional(),
@@ -45,7 +47,10 @@ export const POST = async (request: Request) => {
         userId: session.userId,
         role: user.role
       },
-      parsed.data
+      {
+        ...parsed.data,
+        normalizationRules: parsed.data.normalizationRules as Prisma.InputJsonValue | null
+      }
     );
     return NextResponse.json(result);
   } catch (error) {

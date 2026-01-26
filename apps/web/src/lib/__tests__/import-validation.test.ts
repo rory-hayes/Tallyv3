@@ -6,7 +6,10 @@ import {
   importValidationLimits,
   validateImportBuffer
 } from "@/lib/import-validation";
-import { ValidationError } from "@/lib/errors";
+import {
+  ImportFileInvalidError,
+  ImportParseError
+} from "@/lib/errors";
 
 describe("import validation", () => {
   it("formats bytes consistently", () => {
@@ -51,7 +54,7 @@ describe("import validation", () => {
         mimeType: "text/csv"
       })
     ).toThrowError(
-      new ValidationError("Invalid CSV file. Unable to parse the file.")
+      new ImportParseError("Invalid file. No rows were detected.")
     );
   });
 
@@ -65,7 +68,7 @@ describe("import validation", () => {
         mimeType: "text/csv"
       })
     ).toThrowError(
-      new ValidationError("Invalid CSV file. The file appears to be binary.")
+      new ImportFileInvalidError("Invalid CSV file. The file appears to be binary.")
     );
   });
 
@@ -79,7 +82,7 @@ describe("import validation", () => {
         mimeType: "text/csv"
       })
     ).toThrowError(
-      new ValidationError("Invalid CSV file. Use UTF-8 encoding and retry.")
+      new ImportFileInvalidError("Invalid CSV file. Use UTF-8 encoding and retry.")
     );
   });
 
@@ -93,7 +96,9 @@ describe("import validation", () => {
         mimeType: "text/csv"
       })
     ).toThrowError(
-      new ValidationError("Invalid CSV file. PDF detected; export as CSV or XLSX.")
+      new ImportFileInvalidError(
+        "Invalid CSV file. PDF detected; export as CSV or XLSX."
+      )
     );
   });
 
@@ -107,7 +112,7 @@ describe("import validation", () => {
         mimeType: "text/csv"
       })
     ).toThrowError(
-      new ValidationError("Invalid CSV file. The file appears to be zipped.")
+      new ImportFileInvalidError("Invalid CSV file. The file appears to be zipped.")
     );
   });
 
@@ -121,7 +126,7 @@ describe("import validation", () => {
         mimeType: "text/plain"
       })
     ).toThrowError(
-      new ValidationError("Unsupported file type. Upload CSV or XLSX.")
+      new ImportFileInvalidError("Unsupported file type. Upload CSV or XLSX.")
     );
   });
 
@@ -135,7 +140,9 @@ describe("import validation", () => {
         mimeType: "text/csv"
       })
     ).toThrowError(
-      new ValidationError("Legacy .xls files are not supported. Export as CSV or XLSX.")
+      new ImportFileInvalidError(
+        "Legacy .xls files are not supported. Export as CSV or XLSX."
+      )
     );
   });
 
@@ -149,7 +156,9 @@ describe("import validation", () => {
         mimeType: "application/vnd.ms-excel"
       })
     ).toThrowError(
-      new ValidationError("Legacy .xls files are not supported. Export as CSV or XLSX.")
+      new ImportFileInvalidError(
+        "Legacy .xls files are not supported. Export as CSV or XLSX."
+      )
     );
   });
 
@@ -163,7 +172,9 @@ describe("import validation", () => {
         mimeType: "application/vnd.ms-excel"
       })
     ).toThrowError(
-      new ValidationError("Unsupported Excel format. Export the file as CSV or XLSX.")
+      new ImportFileInvalidError(
+        "Unsupported Excel format. Export the file as CSV or XLSX."
+      )
     );
   });
 
@@ -218,7 +229,7 @@ describe("import validation", () => {
         mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       })
     ).toThrowError(
-      new ValidationError(
+      new ImportFileInvalidError(
         "Invalid Excel file. The file signature does not match XLSX."
       )
     );
@@ -234,7 +245,9 @@ describe("import validation", () => {
         mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       })
     ).toThrowError(
-      new ValidationError("Invalid Excel file. The workbook definition is missing.")
+      new ImportFileInvalidError(
+        "Invalid Excel file. The workbook definition is missing."
+      )
     );
   });
 
@@ -251,7 +264,7 @@ describe("import validation", () => {
         mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       })
     ).toThrowError(
-      new ValidationError("Invalid Excel file. Unable to read workbook.")
+      new ImportParseError("Invalid Excel file. Unable to read workbook.")
     );
   });
 
@@ -272,7 +285,7 @@ describe("import validation", () => {
           mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         })
       ).toThrowError(
-        new ValidationError("Invalid Excel file. No worksheets were found.")
+        new ImportParseError("Invalid Excel file. No worksheets were found.")
       );
     } finally {
       readSpy.mockRestore();
@@ -290,7 +303,7 @@ describe("import validation", () => {
         sizeBytes: importValidationLimits.maxBytes + 1
       })
     ).toThrowError(
-      new ValidationError(
+      new ImportFileInvalidError(
         `File exceeds the ${formatBytes(importValidationLimits.maxBytes)} limit.`
       )
     );
@@ -318,7 +331,7 @@ describe("import validation", () => {
         fileName: "empty-rows.csv",
         mimeType: "text/csv"
       })
-    ).toThrowError(new ValidationError("Invalid file. No rows were detected."));
+    ).toThrowError(new ImportParseError("Invalid file. No rows were detected."));
 
     parseSpy.mockRestore();
   });
@@ -345,7 +358,9 @@ describe("import validation", () => {
         fileName: "empty-cols.csv",
         mimeType: "text/csv"
       })
-    ).toThrowError(new ValidationError("Invalid file. No columns were detected."));
+    ).toThrowError(
+      new ImportParseError("Invalid file. No columns were detected.")
+    );
 
     parseSpy.mockRestore();
   });

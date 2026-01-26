@@ -10,7 +10,7 @@ import { prisma } from "@/lib/prisma";
 
 const prepareSchema = z.object({
   payRunId: z.string().uuid(),
-  sourceType: z.enum(["REGISTER", "BANK", "GL", "STATUTORY"]),
+  sourceType: z.enum(["REGISTER", "BANK", "GL", "STATUTORY", "PENSION_SCHEDULE"]),
   originalFilename: z.string().min(1),
   mimeType: z.string().optional(),
   sizeBytes: z.number().int().positive()

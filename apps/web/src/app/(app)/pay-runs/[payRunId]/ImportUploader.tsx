@@ -16,7 +16,8 @@ const sourceLabels: Record<SourceType, string> = {
   REGISTER: "Register",
   BANK: "Bank / Payments",
   GL: "GL Journal",
-  STATUTORY: "Statutory Totals"
+  STATUTORY: "Statutory Totals",
+  PENSION_SCHEDULE: "Pension Schedule"
 };
 
 const toReadableSize = (size: number): string => {
@@ -113,8 +114,11 @@ export const ImportUploader = ({ payRunId, sourceType, disabled }: ImportUploade
         })
       });
 
-      const finalizeBody = await finalizeResponse.json();
+      const finalizeBody = await finalizeResponse.json().catch(() => ({}));
       if (!finalizeResponse.ok) {
+        if (finalizeBody.importId) {
+          router.refresh();
+        }
         throw new Error(finalizeBody.error || "Finalize failed.");
       }
 

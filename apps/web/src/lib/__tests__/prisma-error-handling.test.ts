@@ -62,7 +62,10 @@ describe("prisma error handling", () => {
   });
 
   it("rethrows unexpected pay run creation errors", async () => {
-    prismaMock.client.findFirst.mockResolvedValueOnce({ id: "client-1" });
+    prismaMock.client.findFirst.mockResolvedValueOnce({
+      id: "client-1",
+      payrollFrequency: "MONTHLY"
+    });
     prismaMock.payRun.create.mockRejectedValueOnce(new Error("boom"));
 
     await expect(

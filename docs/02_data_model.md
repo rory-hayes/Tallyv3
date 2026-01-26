@@ -10,7 +10,7 @@ Define the core entities and relationships. This should remain stable; migration
 - region (UK | IE)
 - timezone
 - branding settings
-- default thresholds
+- defaults (JSON: requiredSources, tolerances, approvalSettings, redaction)
 - created_at
 
 ### User
@@ -30,6 +30,7 @@ Define the core entities and relationships. This should remain stable; migration
 - payroll_system (ENUM + Other)
 - payroll_frequency (weekly | fortnightly | monthly | other)
 - required_sources configuration
+- settings (JSON: tolerance overrides, future per-client defaults)
 - created_at
 
 ### PayRun
@@ -43,13 +44,14 @@ Define the core entities and relationships. This should remain stable; migration
 - status (see state machine doc)
 - assigned_preparer_user_id (optional)
 - assigned_reviewer_user_id (optional)
+- settings (JSON: pay-run overrides such as tolerances)
 - created_at
 
 ### Import
 Represents an immutable uploaded file and its parsing output.
 - id
 - pay_run_id
-- source_type (REGISTER | BANK | GL | STATUTORY)
+- source_type (REGISTER | BANK | GL | STATUTORY | PENSION_SCHEDULE)
 - version (int, increments per source_type within pay run)
 - storage_uri
 - file_hash (sha256)
@@ -58,7 +60,9 @@ Represents an immutable uploaded file and its parsing output.
 - size_bytes
 - uploaded_by_user_id
 - uploaded_at
-- parse_status (PENDING | PARSED | FAILED)
+- parse_status (UPLOADED | PARSING | PARSED | MAPPING_REQUIRED | MAPPED | READY | ERROR_FILE_INVALID | ERROR_PARSE_FAILED)
+- error_code (optional; ERROR_FILE_INVALID | ERROR_PARSE_FAILED)
+- error_message (optional)
 - template_id used (optional)
 - parse_summary JSON (row counts, header info, warnings)
 
@@ -75,6 +79,16 @@ Versioned template for a source type.
 - created_by
 - created_at
 - status (DRAFT | ACTIVE | DEPRECATED)
+
+### AccountClassification
+Maps client GL account codes to reconciliation classes.
+- id
+- firm_id
+- client_id
+- account_code
+- account_name (optional)
+- classification (EXPENSE | NET_PAYABLE | TAX_PAYABLE | NI_PRSI_PAYABLE | PENSION_PAYABLE | CASH | OTHER)
+- created_at
 
 ### NormalizedRecord
 Stores normalized rows (optional storage strategy).
@@ -109,7 +123,7 @@ Exceptions are derived from FAIL/WARN check results plus evidence.
 - pay_run_id
 - reconciliation_run_id
 - check_result_id
-- category
+- category (BANK_MISMATCH | BANK_DATA_QUALITY | JOURNAL_MISMATCH | STATUTORY_MISMATCH | SANITY)
 - severity
 - status (OPEN | RESOLVED | DISMISSED | OVERRIDDEN)
 - assigned_to_user_id (optional)
@@ -134,6 +148,10 @@ Exceptions are derived from FAIL/WARN check results plus evidence.
 - generated_by
 - pack_version (int)
 - storage_uri_pdf
+- storage_key_pdf
+- content_type
+- size_bytes
+- file_hash_sha256
 - storage_uri_bundle (optional)
 - locked_at (optional)
 - locked_by (optional)
@@ -141,6 +159,19 @@ Exceptions are derived from FAIL/WARN check results plus evidence.
 
 ### AuditEvent
 See audit log doc.
+
+### ExpectedVariance
+Structured overrides for known recurring differences.
+- id
+- firm_id
+- client_id
+- applies_to_check_id (optional)
+- variance_type (DIRECTORS_SEPARATE | PENSION_SEPARATE | ROUNDING | OTHER)
+- condition (JSON: amount/pct bounds, payee/reference patterns)
+- effect (JSON: downgrade_to, requires_note, requires_attachment, requires_reviewer_ack)
+- active (boolean)
+- created_by
+- created_at
 
 ## Acceptance criteria
 - All entities include firm_id or are reachable from firm-scoped parent.

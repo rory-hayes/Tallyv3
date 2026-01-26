@@ -30,7 +30,8 @@ const sourceLabels: Record<SourceType, string> = {
   REGISTER: "Register",
   BANK: "Bank / Payments",
   GL: "GL Journal",
-  STATUTORY: "Statutory Totals"
+  STATUTORY: "Statutory Totals",
+  PENSION_SCHEDULE: "Pension Schedule"
 };
 
 const titleCase = (value: string) =>

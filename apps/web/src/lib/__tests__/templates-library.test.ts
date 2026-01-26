@@ -75,6 +75,34 @@ describe("template library data", () => {
       data: {
         firmId: firmA.id,
         clientId: clientA.id,
+        sourceType: "REGISTER",
+        version: 1,
+        name: "Stable Template",
+        status: "ACTIVE",
+        sourceColumns: ["Employee", "Net Pay"],
+        columnMap: { employeeName: "Employee", netPay: "Net Pay" },
+        createdByUserId: userA.id
+      }
+    });
+
+    const stableTemplateV2 = await prisma.mappingTemplate.create({
+      data: {
+        firmId: firmA.id,
+        clientId: clientA.id,
+        sourceType: "REGISTER",
+        version: 2,
+        name: "Stable Template",
+        status: "ACTIVE",
+        sourceColumns: ["Employee", "Net Pay"],
+        columnMap: { employeeName: "Employee", netPay: "Net Pay" },
+        createdByUserId: userA.id
+      }
+    });
+
+    await prisma.mappingTemplate.create({
+      data: {
+        firmId: firmA.id,
+        clientId: clientA.id,
         sourceType: "GL",
         version: 1,
         name: "Bad Columns",
@@ -180,10 +208,12 @@ describe("template library data", () => {
       sourceType: "REGISTER"
     });
 
-    expect(clientScoped.templates).toHaveLength(1);
-    expect(clientScoped.templates[0]?.template.id).toBe(templateV2.id);
-    expect(clientScoped.templates[0]?.drift).toBe("Changed");
-    expect(clientScoped.templates[0]?.lastUsed?.toISOString()).toBe(
+    expect(clientScoped.templates).toHaveLength(2);
+    const registerEntry = clientScoped.templates.find(
+      (entry) => entry.template.id === templateV2.id
+    );
+    expect(registerEntry?.drift).toBe("Changed");
+    expect(registerEntry?.lastUsed?.toISOString()).toBe(
       lastUsedAt.toISOString()
     );
 
@@ -208,6 +238,25 @@ describe("template library data", () => {
         (entry) => entry.template.id === templateV2.id
       )
     ).toBe(true);
+
+    const statusFiltered = await getTemplateLibraryData(firmA.id, {
+      status: "ACTIVE"
+    });
+    expect(
+      statusFiltered.templates.some((entry) => entry.template.id === templateV1.id)
+    ).toBe(false);
+
+    const clientFiltered = await getTemplateLibraryData(firmA.id, {
+      clientId: clientA.id
+    });
+    expect(
+      clientFiltered.templates.some((entry) => entry.template.id === firmTemplate.id)
+    ).toBe(false);
+
+    const stableEntry = statusFiltered.templates.find(
+      (entry) => entry.template.id === stableTemplateV2.id
+    );
+    expect(stableEntry?.drift).toBe("Stable");
   });
 
   it("handles empty template lists", async () => {

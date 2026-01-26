@@ -12,6 +12,14 @@ const { getPackDownloadUrl } = vi.hoisted(() => ({
   getPackDownloadUrl: vi.fn()
 }));
 
+const { recordAuditEvent } = vi.hoisted(() => ({
+  recordAuditEvent: vi.fn()
+}));
+
+const { logServerError } = vi.hoisted(() => ({
+  logServerError: vi.fn()
+}));
+
 const { findFirst } = vi.hoisted(() => ({
   findFirst: vi.fn()
 }));
@@ -30,7 +38,9 @@ vi.mock("@/lib/prisma", () => ({
     }
   }
 }));
+vi.mock("@/lib/audit", () => ({ recordAuditEvent }));
 vi.mock("@/lib/packs", () => ({ getPackDownloadUrl }));
+vi.mock("@/lib/server-errors", () => ({ logServerError }));
 
 import { PermissionError } from "@/lib/permissions";
 import { GET } from "@/app/(app)/packs/[packId]/download/route";
@@ -44,6 +54,8 @@ describe("pack download route", () => {
     requirePermission.mockReset();
     getPackDownloadUrl.mockReset();
     findFirst.mockReset();
+    recordAuditEvent.mockReset();
+    logServerError.mockReset();
   });
 
   it("denies access when permission check fails", async () => {
@@ -95,7 +107,7 @@ describe("pack download route", () => {
 
   it("redirects to a signed download URL when the pack is found", async () => {
     requirePermission.mockReturnValue(undefined);
-    findFirst.mockResolvedValue({ id: "pack-3", firmId: "firm-1" });
+    findFirst.mockResolvedValue({ id: "pack-3", firmId: "firm-1", payRunId: "pay-1" });
     getPackDownloadUrl.mockResolvedValue("https://files.example.com/pack.pdf");
 
     const response = await GET(new Request("http://localhost"), {
@@ -106,11 +118,18 @@ describe("pack download route", () => {
     expect(response.headers.get("location")).toBe(
       "https://files.example.com/pack.pdf"
     );
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "PACK_DOWNLOADED",
+        entityId: "pack-3"
+      }),
+      expect.objectContaining({ firmId: "firm-1", actorUserId: "user-1" })
+    );
   });
 
   it("returns 500 when the download URL cannot be generated", async () => {
     requirePermission.mockReturnValue(undefined);
-    findFirst.mockResolvedValue({ id: "pack-4", firmId: "firm-1" });
+    findFirst.mockResolvedValue({ id: "pack-4", firmId: "firm-1", payRunId: "pay-4" });
     getPackDownloadUrl.mockRejectedValue(new Error("boom"));
 
     const response = await GET(new Request("http://localhost"), {
@@ -119,5 +138,12 @@ describe("pack download route", () => {
 
     expect(response.status).toBe(500);
     expect(await response.text()).toBe("Unable to prepare pack download.");
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "PACK_DOWNLOAD_FAILED",
+        entityId: "pack-4"
+      }),
+      expect.objectContaining({ firmId: "firm-1", actorUserId: "user-1" })
+    );
   });
 });

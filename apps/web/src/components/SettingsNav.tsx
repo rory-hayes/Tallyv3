@@ -5,9 +5,11 @@ import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
-const settingsTabs: Array<{ label: string; href: Route }> = [
+const settingsTabs: Array<{ label: string; href: string }> = [
   { label: "Users", href: "/settings/users" },
   { label: "Audit log", href: "/settings/audit-log" },
+  { label: "Tolerances", href: "/settings/tolerances" },
+  { label: "Approvals", href: "/settings/approvals" },
   { label: "Redaction", href: "/settings/redaction" }
 ];
 
@@ -21,7 +23,7 @@ export const SettingsNav = () => {
         return (
           <Link
             key={tab.href}
-            href={tab.href}
+            href={tab.href as Route}
             className={clsx(
               "rounded-full px-4 py-1.5 text-sm font-semibold",
               isActive

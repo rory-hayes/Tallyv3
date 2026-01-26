@@ -38,6 +38,7 @@ ExpectedVariance
   - status is downgraded per effect
   - a note is required if configured
   - reviewer acknowledgment required if configured
+- Variances can be archived (inactive) while retaining audit history.
 
 ## UI requirements
 - Admin/Reviewer can create ExpectedVariance templates per client.

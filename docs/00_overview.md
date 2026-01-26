@@ -17,11 +17,13 @@ It is not a payroll calculation engine. The payroll register export is treated a
 3. **Configurable, not programmable**: toggles/thresholds/expected variances, not customer-authored code.
 4. **Least privilege**: RBAC by role; audit log for sensitive actions.
 
-## The 4 sources
+## The core sources
 - Payroll Register (CSV/XLSX export)
 - Bank / Payments (BACS/SEPA file or payment summary export)
 - GL Journal export (CSV/XLSX)
 - Statutory Totals export (summary report)
+Optional:
+- Pension Schedule export (optional; reconciles pension totals)
 
 ## Output artifact
 - Reconciliation Pack (PDF) + optional evidence bundle

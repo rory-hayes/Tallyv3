@@ -117,6 +117,24 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
           >
             Edit
           </Link>
+          <Link
+            href={`/clients/${client.id}/account-classifications` as Route}
+            className="rounded-lg border border-slate/30 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate hover:border-slate/60"
+          >
+            Account classes
+          </Link>
+          <Link
+            href={`/clients/${client.id}/tolerances` as Route}
+            className="rounded-lg border border-slate/30 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate hover:border-slate/60"
+          >
+            Tolerances
+          </Link>
+          <Link
+            href={`/clients/${client.id}/expected-variances` as Route}
+            className="rounded-lg border border-slate/30 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate hover:border-slate/60"
+          >
+            Expected variances
+          </Link>
           {!client.archivedAt ? (
             <Link
               href={`/pay-runs/new?clientId=${client.id}` as Route}

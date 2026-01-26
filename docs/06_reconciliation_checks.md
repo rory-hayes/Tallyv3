@@ -63,20 +63,42 @@ These are MVP-critical.
      - register: top contributing rows
      - bank: top contributing rows
 
-4. **CHK_REGISTER_GROSS_TO_JOURNAL_TOTAL**
-   - Compare: sum(register.gross_pay) vs derived journal payroll cost total
-   - Implementation note: journal extraction is vendor-specific; MVP supports:
-     - total debits in payroll expense accounts (configurable account prefixes)
-     - OR compare to overall journal net movement if only one journal exists
-   - Status defaults to WARN until account mapping is configured.
+4. **CHK_REGISTER_GROSS_TO_JOURNAL_EXPENSE**
+   - Compare: sum(register.gross_pay) vs classified journal expense total.
+   - Status defaults to WARN until account classification is configured.
 
-5. **CHK_JOURNAL_DEBITS_EQUAL_CREDITS**
+5. **CHK_REGISTER_EMPLOYER_COSTS_TO_JOURNAL_EXPENSE**
+   - Compare: employer costs (NI/PRSI + employer pension if mapped) vs journal employer costs.
+   - Status defaults to WARN until account classification is configured.
+
+6. **CHK_REGISTER_NET_PAY_TO_JOURNAL_LIABILITY**
+   - Compare: sum(register.net_pay) vs journal net wages payable accounts.
+
+7. **CHK_REGISTER_TAX_TO_JOURNAL_LIABILITY**
+   - Compare: sum(register.tax*) vs journal tax + NI/PRSI liability accounts.
+
+8. **CHK_REGISTER_PENSION_TO_JOURNAL_LIABILITY**
+   - Compare: sum(register.pension_employee + pension_employer) vs journal pension liabilities.
+
+9. **CHK_JOURNAL_DEBITS_EQUAL_CREDITS**
    - FAIL if sum(positive amounts) + sum(negative amounts) != 0 within tolerance.
 
-6. **CHK_REGISTER_DEDUCTIONS_TO_STATUTORY_TOTALS**
+10. **CHK_REGISTER_DEDUCTIONS_TO_STATUTORY_TOTALS**
    - Compare: register totals by category (tax/NI/pension etc.) vs statutory categories.
    - MVP: treat statutory file as free-form category amounts; mapping template maps categories.
    - Default to WARN if statutory file missing.
+
+11. **CHK_REGISTER_PENSION_TO_PENSION_SCHEDULE**
+   - Compare: register pension totals vs pension schedule totals.
+   - Default to WARN if pension schedule is missing.
+
+### C. Bank data quality checks (sanity)
+12. **CHK_BANK_DUPLICATE_PAYMENTS**
+   - Detect duplicate payments (payee + amount + reference) beyond threshold.
+13. **CHK_BANK_NEGATIVE_PAYMENTS**
+   - FAIL if any zero or negative payment exists.
+14. **CHK_BANK_PAYMENT_COUNT_MISMATCH**
+   - WARN if bank payment count differs from register count beyond tolerance.
 
 ### C. Line-level matching (Phase 1.5 / optional in MVP)
 Ship only if it is robust for early adopters.

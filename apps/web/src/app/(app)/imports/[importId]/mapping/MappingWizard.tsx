@@ -20,12 +20,14 @@ type TemplateOption = {
   clientId: string | null;
   sourceColumns: string[];
   columnMap: ColumnMap;
+  normalizationRules?: Record<string, unknown> | null;
 };
 
 type MappingWizardProps = {
   importId: string;
   payRunId: string;
   sourceType: SourceType;
+  region: "UK" | "IE";
   defaultTemplateName: string;
   templates: TemplateOption[];
 };
@@ -55,6 +57,7 @@ export const MappingWizard = ({
   importId,
   payRunId,
   sourceType,
+  region,
   defaultTemplateName,
   templates
 }: MappingWizardProps) => {
@@ -70,6 +73,9 @@ export const MappingWizard = ({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("new");
   const [templateName, setTemplateName] = useState(defaultTemplateName);
   const [columnMap, setColumnMap] = useState<ColumnMap>({});
+  const [statutoryCategoryMap, setStatutoryCategoryMap] = useState<
+    Record<string, string | null>
+  >({});
   const [createNewVersion, setCreateNewVersion] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -126,11 +132,26 @@ export const MappingWizard = ({
     if (selectedTemplateId === "new" && templateName.trim().length < 2) {
       errors.push("Template name is required.");
     }
+    if (sourceType === "STATUTORY") {
+      const mappedCount = Object.values(statutoryCategoryMap).filter(
+        (value) => value
+      ).length;
+      if (mappedCount === 0) {
+        errors.push("Map at least one statutory category.");
+      }
+    }
     return {
       valid: errors.length === 0,
       errors
     };
-  }, [columns, columnMap, sourceType, selectedTemplateId, templateName]);
+  }, [
+    columns,
+    columnMap,
+    sourceType,
+    selectedTemplateId,
+    templateName,
+    statutoryCategoryMap
+  ]);
 
   const mappedFields = useMemo(() => {
     return config.fields.filter((field) => columnMap[field.key]);
@@ -170,6 +191,87 @@ export const MappingWizard = ({
       return output;
     });
   }, [previewDataRows, columns, columnMap, mappedFields]);
+
+  const statutoryCategoryOptions = useMemo(() => {
+    if (sourceType !== "STATUTORY") {
+      return [];
+    }
+    if (region === "IE") {
+      return [
+        { value: "TAX_PRIMARY", label: "PAYE / USC" },
+        { value: "TAX_SECONDARY", label: "PRSI" },
+        { value: "TAX_OTHER", label: "Other tax" },
+        { value: "PENSION_EMPLOYEE", label: "Pension (employee)" },
+        { value: "PENSION_EMPLOYER", label: "Pension (employer)" },
+        { value: "OTHER_DEDUCTIONS", label: "Other deductions" }
+      ];
+    }
+    return [
+      { value: "TAX_PRIMARY", label: "PAYE" },
+      { value: "TAX_SECONDARY", label: "National Insurance" },
+      { value: "TAX_OTHER", label: "Other tax" },
+      { value: "PENSION_EMPLOYEE", label: "Pension (employee)" },
+      { value: "PENSION_EMPLOYER", label: "Pension (employer)" },
+      { value: "OTHER_DEDUCTIONS", label: "Other deductions" }
+    ];
+  }, [region, sourceType]);
+
+  const previewCategories = useMemo(() => {
+    if (sourceType !== "STATUTORY" || columns.length === 0) {
+      return [];
+    }
+    const columnIndexByNormalized = new Map<string, number>();
+    columns.forEach((column, index) => {
+      const normalized = normalizeColumnName(column);
+      if (normalized) {
+        columnIndexByNormalized.set(normalized, index);
+      }
+    });
+    const categoryColumn = columnMap.category;
+    const categoryIndex = categoryColumn
+      ? columnIndexByNormalized.get(normalizeColumnName(categoryColumn))
+      : undefined;
+    if (categoryIndex === undefined) {
+      return [];
+    }
+    const unique = new Set<string>();
+    previewDataRows.forEach((row) => {
+      const raw = String(row[categoryIndex] ?? "").trim();
+      if (raw) {
+        unique.add(raw);
+      }
+    });
+    return Array.from(unique.values()).slice(0, 20);
+  }, [columns, columnMap.category, previewDataRows, sourceType]);
+
+  const suggestStatutoryKey = useCallback(
+    (value: string) => {
+      const normalized = normalizeColumnName(value);
+      if (!normalized) {
+        return null;
+      }
+      if (normalized.includes("pension")) {
+        return normalized.includes("employer") ? "PENSION_EMPLOYER" : "PENSION_EMPLOYEE";
+      }
+      if (normalized.includes("ni") || normalized.includes("national insurance")) {
+        return "TAX_SECONDARY";
+      }
+      if (normalized.includes("prsi")) {
+        return "TAX_SECONDARY";
+      }
+      if (normalized.includes("usc")) {
+        return "TAX_PRIMARY";
+      }
+      if (normalized.includes("paye") || normalized.includes("tax")) {
+        return "TAX_PRIMARY";
+      }
+      if (normalized.includes("deduction") || normalized.includes("loan")) {
+        return "OTHER_DEDUCTIONS";
+      }
+      return null;
+    },
+    []
+  );
 
   const numericTotals = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -234,6 +336,7 @@ export const MappingWizard = ({
       setTemplateName(defaultTemplateName);
       setColumnMap({});
       setCreateNewVersion(false);
+      setStatutoryCategoryMap({});
       return;
     }
     const selected =
@@ -241,6 +344,15 @@ export const MappingWizard = ({
     if (selected) {
       setTemplateName(selected.name);
       setColumnMap(selected.columnMap ?? {});
+      const templateMap =
+        (selected.normalizationRules as { categoryMap?: Record<string, string | null> } | null)
+          ?.categoryMap ?? {};
+      const normalizedMap = Object.fromEntries(
+        Object.entries(templateMap)
+          .map(([key, value]) => [normalizeColumnName(key), value])
+          .filter(([key]) => Boolean(key))
+      );
+      setStatutoryCategoryMap(normalizedMap);
     }
   }, [selectedTemplateId, templateOptions, defaultTemplateName]);
 
@@ -276,6 +388,23 @@ export const MappingWizard = ({
     });
   }, [columns, columnsNormalized]);
 
+  useEffect(() => {
+    if (sourceType !== "STATUTORY" || previewCategories.length === 0) {
+      return;
+    }
+    setStatutoryCategoryMap((current) => {
+      const next = { ...current };
+      for (const raw of previewCategories) {
+        const normalized = normalizeColumnName(raw);
+        if (!normalized || next[normalized]) {
+          continue;
+        }
+        next[normalized] = suggestStatutoryKey(raw);
+      }
+      return next;
+    });
+  }, [previewCategories, sourceType, suggestStatutoryKey]);
+
   const handleSave = async () => {
     setSaving(true);
     setSaveError(null);
@@ -289,6 +418,10 @@ export const MappingWizard = ({
           templateName: selectedTemplateId === "new" ? templateName : undefined,
           sourceColumns: columns,
           columnMap,
+          normalizationRules:
+            sourceType === "STATUTORY"
+              ? { categoryMap: statutoryCategoryMap }
+              : undefined,
           headerRowIndex,
           sheetName,
           createNewVersion: selectedTemplateId === "new" ? undefined : createNewVersion,
@@ -465,6 +598,48 @@ export const MappingWizard = ({
           </div>
         )}
       </div>
+
+      {sourceType === "STATUTORY" ? (
+        <div className="rounded-xl border border-slate/20 bg-surface p-6">
+          <h2 className="text-sm font-semibold text-ink">Category mapping</h2>
+          <p className="mt-2 text-sm text-slate">
+            Map statutory category labels to the internal keys used for reconciliation.
+          </p>
+          {previewCategories.length === 0 ? (
+            <div className="mt-4 rounded-lg border border-slate/20 bg-surface-muted px-4 py-3 text-xs text-slate">
+              Map the category column and load preview rows to see categories.
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              {previewCategories.map((category) => {
+                const normalized = normalizeColumnName(category);
+                return (
+                  <label key={category} className="text-sm text-slate">
+                    {category}
+                    <select
+                      value={statutoryCategoryMap[normalized] ?? ""}
+                      onChange={(event) =>
+                        setStatutoryCategoryMap((current) => ({
+                          ...current,
+                          [normalized]: event.target.value || null
+                        }))
+                      }
+                      className="mt-2 w-full rounded-lg border border-slate/30 bg-surface px-3 py-2 text-sm text-ink"
+                    >
+                      <option value="">Ignore</option>
+                      {statutoryCategoryOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-slate/20 bg-surface">
         <div className="border-b border-slate/20 px-4 py-3">

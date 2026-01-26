@@ -25,6 +25,9 @@ const defaultFirmSettings = {
     gl: true,
     statutory: false
   },
+  approvalSettings: {
+    allowSelfApproval: false
+  },
   redaction: {
     maskEmployeeNames: false,
     maskBankDetails: false,

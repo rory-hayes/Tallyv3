@@ -4,14 +4,13 @@ import { prisma, type SourceType } from "@/lib/prisma";
 import { recordAuditEvent } from "./audit";
 import { NotFoundError, ValidationError } from "./errors";
 import { transitionPayRunStatus } from "./pay-runs";
+import { resolveRequiredSources } from "./required-sources";
 
 type ActorContext = {
   firmId: string;
   userId: string;
   role: "ADMIN" | "PREPARER" | "REVIEWER";
 };
-
-const REQUIRED_SOURCES: SourceType[] = ["REGISTER", "BANK", "GL"];
 
 const assertRole = (role: ActorContext["role"], allowed: ActorContext["role"][]) => {
   if (!allowed.includes(role)) {
@@ -23,7 +22,8 @@ const buildSourceLabels = () => ({
   REGISTER: "Register",
   BANK: "Bank / Payments",
   GL: "GL Journal",
-  STATUTORY: "Statutory Totals"
+  STATUTORY: "Statutory Totals",
+  PENSION_SCHEDULE: "Pension Schedule"
 });
 
 export type ReviewGateResult = {
@@ -37,6 +37,12 @@ export const getReviewGateStatus = async (
   firmId: string,
   payRunId: string
 ): Promise<ReviewGateResult> => {
+  const firm = await prisma.firm.findFirst({
+    where: { id: firmId },
+    select: { defaults: true }
+  });
+  const requiredSources = resolveRequiredSources(firm?.defaults);
+
   const imports = await prisma.import.findMany({
     where: {
       firmId,
@@ -52,10 +58,10 @@ export const getReviewGateStatus = async (
     }
   }
 
-  const missingSources = REQUIRED_SOURCES.filter(
+  const missingSources = requiredSources.filter(
     (source) => !latestBySource.has(source)
   );
-  const unmappedSources = REQUIRED_SOURCES.filter((source) => {
+  const unmappedSources = requiredSources.filter((source) => {
     const latest = latestBySource.get(source);
     return latest ? !latest.mappingTemplateVersionId : false;
   });
@@ -98,6 +104,9 @@ export const submitPayRunForReview = async (
     where: {
       id: payRunId,
       firmId: context.firmId
+    },
+    include: {
+      firm: true
     }
   });
 
@@ -165,7 +174,7 @@ export const submitPayRunForReview = async (
 export const approvePayRun = async (
   context: ActorContext,
   payRunId: string,
-  comment?: string | null
+  input?: { comment?: string | null; noComment?: boolean }
 ) => {
   assertRole(context.role, ["ADMIN", "REVIEWER"]);
 
@@ -173,6 +182,9 @@ export const approvePayRun = async (
     where: {
       id: payRunId,
       firmId: context.firmId
+    },
+    include: {
+      firm: true
     }
   });
 
@@ -182,6 +194,38 @@ export const approvePayRun = async (
 
   if (payRun.status !== "READY_FOR_REVIEW") {
     throw new ValidationError("Pay run is not ready for review.");
+  }
+
+  const comment = input?.comment?.trim() ?? "";
+  const noComment = input?.noComment === true;
+
+  if (comment.length === 0 && !noComment) {
+    throw new ValidationError("Add a comment or confirm no comment.");
+  }
+
+  const approvalSettings =
+    payRun.firm.defaults &&
+    typeof payRun.firm.defaults === "object" &&
+    "approvalSettings" in payRun.firm.defaults
+      ? (payRun.firm.defaults as { approvalSettings?: { allowSelfApproval?: boolean } })
+          .approvalSettings
+      : null;
+
+  if (!approvalSettings?.allowSelfApproval) {
+    const lastSubmit = await prisma.auditEvent.findFirst({
+      where: {
+        firmId: context.firmId,
+        entityType: "PAY_RUN",
+        entityId: payRun.id,
+        action: "PAY_RUN_SUBMITTED_FOR_REVIEW"
+      },
+      orderBy: { timestamp: "desc" }
+    });
+    if (lastSubmit?.actorUserId && lastSubmit.actorUserId === context.userId) {
+      throw new ValidationError(
+        "Reviewer approval must be performed by a different user."
+      );
+    }
   }
 
   const approval = await prisma.$transaction(async (tx) => {
@@ -201,7 +245,7 @@ export const approvePayRun = async (
         payRunId: updated.id,
         reviewerUserId: context.userId,
         status: "APPROVED",
-        comment: comment?.trim() || null
+        comment: comment || null
       }
     });
 
@@ -214,7 +258,9 @@ export const approvePayRun = async (
       entityType: "PAY_RUN",
       entityId: payRun.id,
       metadata: {
-        approvalId: approval.id
+        approvalId: approval.id,
+        commentLength: comment.length,
+        noComment
       }
     },
     {
@@ -241,6 +287,9 @@ export const rejectPayRun = async (
     where: {
       id: payRunId,
       firmId: context.firmId
+    },
+    include: {
+      firm: true
     }
   });
 
@@ -250,6 +299,31 @@ export const rejectPayRun = async (
 
   if (payRun.status !== "READY_FOR_REVIEW") {
     throw new ValidationError("Pay run is not ready for review.");
+  }
+
+  const approvalSettings =
+    payRun.firm?.defaults &&
+    typeof payRun.firm.defaults === "object" &&
+    "approvalSettings" in payRun.firm.defaults
+      ? (payRun.firm.defaults as { approvalSettings?: { allowSelfApproval?: boolean } })
+          .approvalSettings
+      : null;
+
+  if (!approvalSettings?.allowSelfApproval) {
+    const lastSubmit = await prisma.auditEvent.findFirst({
+      where: {
+        firmId: context.firmId,
+        entityType: "PAY_RUN",
+        entityId: payRun.id,
+        action: "PAY_RUN_SUBMITTED_FOR_REVIEW"
+      },
+      orderBy: { timestamp: "desc" }
+    });
+    if (lastSubmit?.actorUserId && lastSubmit.actorUserId === context.userId) {
+      throw new ValidationError(
+        "Reviewer approval must be performed by a different user."
+      );
+    }
   }
 
   const approval = await prisma.$transaction(async (tx) => {
@@ -283,7 +357,8 @@ export const rejectPayRun = async (
       entityId: payRun.id,
       metadata: {
         approvalId: approval.id,
-        commentLength: comment.trim().length
+        commentLength: comment.trim().length,
+        noComment: false
       }
     },
     {

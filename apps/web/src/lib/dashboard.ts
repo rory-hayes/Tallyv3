@@ -1,27 +1,7 @@
 import "server-only";
 
 import { prisma, type PayRunStatus, type SourceType } from "@/lib/prisma";
-
-const fallbackRequiredSources: SourceType[] = ["REGISTER", "BANK", "GL"];
-
-const parseRequiredSources = (defaults: unknown): SourceType[] => {
-  if (!defaults || typeof defaults !== "object") {
-    return fallbackRequiredSources;
-  }
-
-  const required = (defaults as { requiredSources?: Record<string, unknown> })
-    .requiredSources;
-  if (!required || typeof required !== "object") {
-    return fallbackRequiredSources;
-  }
-
-  const sources: SourceType[] = [];
-  if (required.register === true) sources.push("REGISTER");
-  if (required.bank === true) sources.push("BANK");
-  if (required.gl === true) sources.push("GL");
-  if (required.statutory === true) sources.push("STATUTORY");
-  return sources.length > 0 ? sources : fallbackRequiredSources;
-};
+import { resolveRequiredSources } from "@/lib/required-sources";
 
 export type DashboardData = {
   requiredSources: SourceType[];
@@ -43,7 +23,7 @@ export const getDashboardData = async (firmId: string): Promise<DashboardData> =
     select: { defaults: true }
   });
 
-  const requiredSources = parseRequiredSources(firm?.defaults);
+  const requiredSources = resolveRequiredSources(firm?.defaults);
 
   const statusCounts = await prisma.payRun.groupBy({
     by: ["status"],

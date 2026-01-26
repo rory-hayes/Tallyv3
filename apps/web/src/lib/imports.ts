@@ -3,12 +3,14 @@ import "server-only";
 import { randomUUID } from "crypto";
 import {
   prisma,
-  type ImportParseStatus,
+  type ImportErrorCode,
+  type ImportStatus,
   type SourceType
 } from "@/lib/prisma";
 import { recordAuditEvent } from "./audit";
 import { ConflictError, NotFoundError, ValidationError } from "./errors";
 import { transitionPayRunStatus } from "./pay-runs";
+import { isImportErrorStatus } from "./import-status";
 import { storageBucket } from "./storage";
 
 export type ImportInput = {
@@ -19,6 +21,9 @@ export type ImportInput = {
   originalFilename: string;
   mimeType: string;
   sizeBytes: number;
+  parseStatus?: ImportStatus;
+  errorCode?: ImportErrorCode | null;
+  errorMessage?: string | null;
 };
 
 type ActorContext = {
@@ -141,6 +146,10 @@ export const createImport = async (
   const nextVersion = latest ? latest.version + 1 : 1;
   const storageUri = resolveStorageUri(input.storageKey);
 
+  const parseStatus = input.parseStatus ?? ("UPLOADED" as ImportStatus);
+  const errorCode = input.errorCode ?? null;
+  const errorMessage = input.errorMessage ?? null;
+
   let importRecord;
   try {
     importRecord = await prisma.import.create({
@@ -156,7 +165,9 @@ export const createImport = async (
         mimeType: input.mimeType,
         sizeBytes: input.sizeBytes,
         uploadedByUserId: context.userId,
-        parseStatus: "UPLOADED" as ImportParseStatus
+        parseStatus,
+        errorCode,
+        errorMessage
       }
     });
   } catch (error) {
@@ -200,6 +211,25 @@ export const createImport = async (
       actorUserId: context.userId
     }
   );
+
+  if (isImportErrorStatus(parseStatus)) {
+    await recordAuditEvent(
+      {
+        action: "IMPORT_ERROR",
+        entityType: "IMPORT",
+        entityId: importRecord.id,
+        metadata: {
+          sourceType: importRecord.sourceType,
+          version: importRecord.version,
+          errorCode: parseStatus
+        }
+      },
+      {
+        firmId: context.firmId,
+        actorUserId: context.userId
+      }
+    );
+  }
 
   return { importRecord, duplicate: false };
 };

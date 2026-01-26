@@ -28,13 +28,13 @@
 Each uploaded file becomes a `SourceImport`:
 - `id`
 - `firm_id`, `client_id`, `pay_run_id`
-- `source_type`: `REGISTER | BANK | GL | STATUTORY`
+- `source_type`: `REGISTER | BANK | GL | STATUTORY | PENSION_SCHEDULE` (optional)
 - `original_filename`
 - `uploaded_by_user_id`
 - `uploaded_at`
 - `file_hash_sha256`
 - `storage_uri`
-- `parse_status`: `UPLOADED | PARSING | PARSED | MAPPED | READY | ERROR`
+- `parse_status`: `UPLOADED | PARSING | PARSED | MAPPING_REQUIRED | MAPPED | READY | ERROR_FILE_INVALID | ERROR_PARSE_FAILED`
 - `mapping_template_version_id` (nullable)
 - `normalized_dataset_id` (nullable)
 

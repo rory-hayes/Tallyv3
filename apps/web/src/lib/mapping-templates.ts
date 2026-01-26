@@ -2,12 +2,16 @@ import "server-only";
 
 import {
   prisma,
+  type ImportStatus,
   type MappingTemplateStatus,
+  type Prisma,
   type SourceType
 } from "@/lib/prisma";
 import { recordAuditEvent } from "./audit";
 import { NotFoundError, ValidationError } from "./errors";
+import { assertImportTransition, isImportErrorStatus } from "./import-status";
 import { transitionPayRunStatus } from "./pay-runs";
+import { resolveRequiredSources } from "./required-sources";
 import {
   detectColumnDrift,
   areColumnMapsEquivalent,
@@ -22,19 +26,42 @@ type ActorContext = {
   role: "ADMIN" | "PREPARER" | "REVIEWER";
 };
 
+const recordMappingSaved = async (
+  context: ActorContext,
+  importRecord: { id: string; sourceType: SourceType; version: number },
+  template: { id: string; version: number }
+) => {
+  await recordAuditEvent(
+    {
+      action: "IMPORT_MAPPING_SAVED",
+      entityType: "IMPORT",
+      entityId: importRecord.id,
+      metadata: {
+        sourceType: importRecord.sourceType,
+        version: importRecord.version,
+        templateId: template.id,
+        templateVersion: template.version
+      }
+    },
+    {
+      firmId: context.firmId,
+      actorUserId: context.userId
+    }
+  );
+};
+
 export type ApplyTemplateInput = {
   importId: string;
   templateId?: string;
   templateName?: string;
   sourceColumns: string[];
   columnMap: ColumnMap;
+  normalizationRules?: Prisma.InputJsonValue | null;
   headerRowIndex?: number;
   sheetName?: string | null;
   createNewVersion?: boolean;
   publish?: boolean;
 };
-
-const requiredSources: SourceType[] = ["REGISTER", "BANK", "GL"];
 
 const ensureImportForMapping = async (firmId: string, importId: string) => {
   const importRecord = await prisma.import.findFirst({
@@ -43,6 +70,7 @@ const ensureImportForMapping = async (firmId: string, importId: string) => {
       firmId
     },
     include: {
+      firm: true,
       payRun: true,
       client: true
     }
@@ -56,7 +84,7 @@ const ensureImportForMapping = async (firmId: string, importId: string) => {
     throw new ValidationError("Locked pay runs cannot accept template changes.");
   }
 
-  if (importRecord.parseStatus === "ERROR") {
+  if (isImportErrorStatus(importRecord.parseStatus)) {
     throw new ValidationError("This import failed validation. Re-upload the file.");
   }
 
@@ -97,6 +125,7 @@ const createTemplate = async ({
   sourceColumns,
   headerRowIndex,
   sheetName,
+  normalizationRules,
   createdByUserId,
   status,
   baseTemplate
@@ -107,6 +136,7 @@ const createTemplate = async ({
   templateName: string;
   columnMap: ColumnMap;
   sourceColumns: string[];
+  normalizationRules?: Prisma.InputJsonValue | null;
   headerRowIndex?: number;
   sheetName?: string | null;
   createdByUserId: string;
@@ -148,6 +178,7 @@ const createTemplate = async ({
         status,
         sourceColumns,
         columnMap,
+        normalizationRules: normalizationRules ?? undefined,
         headerRowIndex,
         sheetName: sheetName ?? null,
         createdByUserId
@@ -197,7 +228,11 @@ const createTemplate = async ({
   return result;
 };
 
-const maybeTransitionToMapped = async (context: ActorContext, payRunId: string) => {
+const maybeTransitionToMapped = async (
+  context: ActorContext,
+  payRunId: string,
+  requiredSources: SourceType[]
+) => {
   if (context.role === "REVIEWER") {
     return;
   }
@@ -247,14 +282,25 @@ const maybeTransitionToMapped = async (context: ActorContext, payRunId: string) 
   }
 };
 
-const markImportMapped = async (importId: string) => {
+const markImportMapped = async (
+  importRecord: { id: string; parseStatus: ImportStatus }
+) => {
+  assertImportTransition(importRecord.parseStatus, "MAPPED");
   await prisma.import.update({
-    where: { id: importId },
-    data: { parseStatus: "MAPPED" }
+    where: { id: importRecord.id },
+    data: {
+      parseStatus: "MAPPED",
+      errorCode: null,
+      errorMessage: null
+    }
   });
 };
 
-const maybeTransitionImportsReady = async (context: ActorContext, payRunId: string) => {
+const maybeTransitionImportsReady = async (
+  context: ActorContext,
+  payRunId: string,
+  requiredSources: SourceType[]
+) => {
   const imports = await prisma.import.findMany({
     where: {
       payRunId,
@@ -275,11 +321,15 @@ const maybeTransitionImportsReady = async (context: ActorContext, payRunId: stri
     .map((source) => latestBySource.get(source))
     .filter(Boolean);
 
+  const importsToReady = latestImports.filter(
+    (entry) => entry && entry.parseStatus !== "READY"
+  );
+
   const allReady = latestImports.every(
     (entry) =>
       entry &&
       entry.mappingTemplateVersionId &&
-      entry.parseStatus !== "ERROR"
+      !isImportErrorStatus(entry.parseStatus)
   );
 
   if (!allReady) {
@@ -290,8 +340,32 @@ const maybeTransitionImportsReady = async (context: ActorContext, payRunId: stri
     where: {
       id: { in: latestImports.map((entry) => entry!.id) }
     },
-    data: { parseStatus: "READY" }
+    data: {
+      parseStatus: "READY",
+      errorCode: null,
+      errorMessage: null
+    }
   });
+
+  await Promise.all(
+    importsToReady.map((entry) =>
+      recordAuditEvent(
+        {
+          action: "IMPORT_READY",
+          entityType: "IMPORT",
+          entityId: entry!.id,
+          metadata: {
+            sourceType: entry!.sourceType,
+            version: entry!.version
+          }
+        },
+        {
+          firmId: context.firmId,
+          actorUserId: context.userId
+        }
+      )
+    )
+  );
 };
 
 export const applyMappingTemplate = async (
@@ -299,6 +373,7 @@ export const applyMappingTemplate = async (
   input: ApplyTemplateInput
 ) => {
   const importRecord = await ensureImportForMapping(context.firmId, input.importId);
+  const requiredSources = resolveRequiredSources(importRecord.firm.defaults);
   const sourceColumns = sanitizeSourceColumns(input.sourceColumns);
   const columnMap = sanitizeColumnMap(importRecord.sourceType, input.columnMap);
 
@@ -333,21 +408,30 @@ export const applyMappingTemplate = async (
       columnMap,
       template.columnMap as ColumnMap
     );
+    const normalizationChanged =
+      JSON.stringify(template.normalizationRules ?? null) !==
+      JSON.stringify(input.normalizationRules ?? null);
 
-    if ((drift.drifted || mappingChanged) && !input.createNewVersion) {
+    if ((drift.drifted || mappingChanged || normalizationChanged) && !input.createNewVersion) {
       throw new ValidationError(
         "Template drift detected. Create a new version to continue."
       );
     }
 
-    if (!drift.drifted && !mappingChanged && !input.createNewVersion) {
+    if (
+      !drift.drifted &&
+      !mappingChanged &&
+      !normalizationChanged &&
+      !input.createNewVersion
+    ) {
       await prisma.import.update({
         where: { id: importRecord.id },
         data: { mappingTemplateVersionId: template.id }
       });
-      await markImportMapped(importRecord.id);
-      await maybeTransitionToMapped(context, importRecord.payRunId);
-      await maybeTransitionImportsReady(context, importRecord.payRunId);
+      await markImportMapped(importRecord);
+      await recordMappingSaved(context, importRecord, template);
+      await maybeTransitionToMapped(context, importRecord.payRunId, requiredSources);
+      await maybeTransitionImportsReady(context, importRecord.payRunId, requiredSources);
       return {
         templateId: template.id,
         version: template.version,
@@ -363,6 +447,7 @@ export const applyMappingTemplate = async (
       templateName: template.name,
       columnMap,
       sourceColumns,
+      normalizationRules: input.normalizationRules ?? null,
       headerRowIndex: input.headerRowIndex,
       sheetName: input.sheetName,
       createdByUserId: context.userId,
@@ -374,10 +459,11 @@ export const applyMappingTemplate = async (
       where: { id: importRecord.id },
       data: { mappingTemplateVersionId: created.id }
     });
-    await markImportMapped(importRecord.id);
+    await markImportMapped(importRecord);
+    await recordMappingSaved(context, importRecord, created);
 
-    await maybeTransitionToMapped(context, importRecord.payRunId);
-    await maybeTransitionImportsReady(context, importRecord.payRunId);
+    await maybeTransitionToMapped(context, importRecord.payRunId, requiredSources);
+    await maybeTransitionImportsReady(context, importRecord.payRunId, requiredSources);
     return {
       templateId: created.id,
       version: created.version,
@@ -397,6 +483,7 @@ export const applyMappingTemplate = async (
     templateName: input.templateName,
     columnMap,
     sourceColumns,
+    normalizationRules: input.normalizationRules ?? null,
     headerRowIndex: input.headerRowIndex,
     sheetName: input.sheetName,
     createdByUserId: context.userId,
@@ -407,10 +494,11 @@ export const applyMappingTemplate = async (
     where: { id: importRecord.id },
     data: { mappingTemplateVersionId: created.id }
   });
-  await markImportMapped(importRecord.id);
+  await markImportMapped(importRecord);
+  await recordMappingSaved(context, importRecord, created);
 
-  await maybeTransitionToMapped(context, importRecord.payRunId);
-  await maybeTransitionImportsReady(context, importRecord.payRunId);
+  await maybeTransitionToMapped(context, importRecord.payRunId, requiredSources);
+  await maybeTransitionImportsReady(context, importRecord.payRunId, requiredSources);
   return {
     templateId: created.id,
     version: created.version,

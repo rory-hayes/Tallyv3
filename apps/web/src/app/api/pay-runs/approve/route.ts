@@ -6,7 +6,8 @@ import { NotFoundError, ValidationError } from "@/lib/errors";
 
 const approveSchema = z.object({
   payRunId: z.string().uuid(),
-  comment: z.string().optional().nullable()
+  comment: z.string().optional().nullable(),
+  noComment: z.boolean().optional()
 });
 
 const errorResponse = (status: number, message: string) =>
@@ -28,7 +29,10 @@ export const POST = async (request: Request) => {
         role: user.role
       },
       parsed.data.payRunId,
-      parsed.data.comment ?? null
+      {
+        comment: parsed.data.comment ?? null,
+        noComment: parsed.data.noComment === true
+      }
     );
     return NextResponse.json({ id: approval.id, status: approval.status });
   } catch (error) {

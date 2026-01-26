@@ -307,7 +307,12 @@ describe("dashboard data", () => {
     });
 
     const statutoryOnly = await getDashboardData(firm.id);
-    expect(statutoryOnly.requiredSources).toEqual(["STATUTORY"]);
+    expect(statutoryOnly.requiredSources).toEqual([
+      "REGISTER",
+      "BANK",
+      "GL",
+      "STATUTORY"
+    ]);
 
     await prisma.firm.update({
       where: { id: firm.id },

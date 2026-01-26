@@ -22,7 +22,8 @@ const sourceLabels: Record<SourceType, string> = {
   REGISTER: "Register",
   BANK: "Bank / Payments",
   GL: "GL Journal",
-  STATUTORY: "Statutory Totals"
+  STATUTORY: "Statutory Totals",
+  PENSION_SCHEDULE: "Pension Schedule"
 };
 
 const formatSources = (sources: SourceType[]) =>
@@ -37,6 +38,7 @@ export const PayRunReviewActions = ({
 }: PayRunReviewActionsProps) => {
   const router = useRouter();
   const [comment, setComment] = useState("");
+  const [noComment, setNoComment] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -86,10 +88,14 @@ export const PayRunReviewActions = ({
   };
 
   const handleApprove = async () => {
+    if (comment.trim().length === 0 && !noComment) {
+      setError("Add a comment or confirm no comment.");
+      return;
+    }
     await postAction(
       "approve",
       "/api/pay-runs/approve",
-      { payRunId, comment: comment.trim() || null },
+      { payRunId, comment: comment.trim() || null, noComment },
       "Pay run approved."
     );
   };
@@ -175,11 +181,30 @@ export const PayRunReviewActions = ({
           </label>
           <textarea
             value={comment}
-            onChange={(event) => setComment(event.target.value)}
+            onChange={(event) => {
+              setComment(event.target.value);
+              if (event.target.value.trim().length > 0 && noComment) {
+                setNoComment(false);
+              }
+            }}
             rows={3}
             className="w-full rounded-lg border border-slate/30 bg-surface px-3 py-2 text-sm"
             placeholder="Optional note for approval/rejection."
           />
+          <label className="flex items-center gap-2 text-xs text-slate">
+            <input
+              type="checkbox"
+              checked={noComment}
+              onChange={(event) => {
+                setNoComment(event.target.checked);
+                if (event.target.checked) {
+                  setComment("");
+                }
+              }}
+              className="h-4 w-4 rounded border-slate/40"
+            />
+            No comment for approval
+          </label>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"

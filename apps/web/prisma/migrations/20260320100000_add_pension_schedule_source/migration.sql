@@ -1,0 +1,3 @@
+-- Add pension schedule optional source and check type
+ALTER TYPE "SourceType" ADD VALUE IF NOT EXISTS 'PENSION_SCHEDULE';
+ALTER TYPE "CheckType" ADD VALUE IF NOT EXISTS 'CHK_REGISTER_PENSION_TO_PENSION_SCHEDULE';

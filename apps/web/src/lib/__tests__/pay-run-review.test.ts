@@ -425,7 +425,7 @@ describe("pay run review flow", () => {
     const approval = await approvePayRun(
       { firmId: firm.id, userId: reviewer.id, role: reviewer.role },
       payRun.id,
-      "Looks good."
+      { comment: "Looks good." }
     );
     expect(approval.status).toBe("APPROVED");
 
@@ -470,6 +470,208 @@ describe("pay run review flow", () => {
     expect(rejectedEvent).not.toBeNull();
   });
 
+  it("requires a comment or explicit no-comment on approval", async () => {
+    const { firm, user } = await createFirmWithUser("ADMIN");
+    const reviewer = await prisma.user.create({
+      data: {
+        firmId: firm.id,
+        email: "reviewer2@firm.com",
+        role: "REVIEWER",
+        status: "ACTIVE"
+      }
+    });
+    const client = await createClient(
+      { firmId: firm.id, userId: user.id },
+      {
+        name: "Approval Comment Client",
+        payrollSystem: "BRIGHTPAY",
+        payrollFrequency: "MONTHLY"
+      }
+    );
+    const payRun = await createPayRun(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        clientId: client.id,
+        periodStart: new Date("2028-01-01T00:00:00Z"),
+        periodEnd: new Date("2028-01-31T00:00:00Z")
+      }
+    );
+
+    await prisma.payRun.update({
+      where: { id: payRun.id },
+      data: { status: "READY_FOR_REVIEW" }
+    });
+
+    await prisma.auditEvent.create({
+      data: {
+        firmId: firm.id,
+        actorUserId: user.id,
+        action: "PAY_RUN_SUBMITTED_FOR_REVIEW",
+        entityType: "PAY_RUN",
+        entityId: payRun.id
+      }
+    });
+
+    await expect(
+      approvePayRun(
+        { firmId: firm.id, userId: reviewer.id, role: reviewer.role },
+        payRun.id,
+        { comment: null, noComment: false }
+      )
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    const approval = await approvePayRun(
+      { firmId: firm.id, userId: reviewer.id, role: reviewer.role },
+      payRun.id,
+      { comment: null, noComment: true }
+    );
+    expect(approval.status).toBe("APPROVED");
+  });
+
+  it("blocks self-approval when disabled in firm settings", async () => {
+    const { firm, user } = await createFirmWithUser("ADMIN");
+    const client = await createClient(
+      { firmId: firm.id, userId: user.id },
+      {
+        name: "Self Approval Client",
+        payrollSystem: "BRIGHTPAY",
+        payrollFrequency: "MONTHLY"
+      }
+    );
+    const payRun = await createPayRun(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        clientId: client.id,
+        periodStart: new Date("2028-02-01T00:00:00Z"),
+        periodEnd: new Date("2028-02-28T00:00:00Z")
+      }
+    );
+
+    await prisma.payRun.update({
+      where: { id: payRun.id },
+      data: { status: "READY_FOR_REVIEW" }
+    });
+
+    await prisma.auditEvent.create({
+      data: {
+        firmId: firm.id,
+        actorUserId: user.id,
+        action: "PAY_RUN_SUBMITTED_FOR_REVIEW",
+        entityType: "PAY_RUN",
+        entityId: payRun.id
+      }
+    });
+
+    await expect(
+      approvePayRun(
+        { firmId: firm.id, userId: user.id, role: user.role },
+        payRun.id,
+        { comment: "Approving my own work." }
+      )
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("allows self-approval when firm setting is enabled", async () => {
+    const { firm, user } = await createFirmWithUser("ADMIN");
+    await prisma.firm.update({
+      where: { id: firm.id },
+      data: {
+        defaults: {
+          approvalSettings: { allowSelfApproval: true }
+        }
+      }
+    });
+    const client = await createClient(
+      { firmId: firm.id, userId: user.id },
+      {
+        name: "Self Approval Allowed",
+        payrollSystem: "BRIGHTPAY",
+        payrollFrequency: "MONTHLY"
+      }
+    );
+    const payRun = await createPayRun(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        clientId: client.id,
+        periodStart: new Date("2028-03-01T00:00:00Z"),
+        periodEnd: new Date("2028-03-31T00:00:00Z")
+      }
+    );
+
+    await prisma.payRun.update({
+      where: { id: payRun.id },
+      data: { status: "READY_FOR_REVIEW" }
+    });
+
+    await prisma.auditEvent.create({
+      data: {
+        firmId: firm.id,
+        actorUserId: user.id,
+        action: "PAY_RUN_SUBMITTED_FOR_REVIEW",
+        entityType: "PAY_RUN",
+        entityId: payRun.id
+      }
+    });
+
+    const approval = await approvePayRun(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id,
+      { comment: "Approved." }
+    );
+    expect(approval.status).toBe("APPROVED");
+  });
+
+  it("blocks self-rejection when firm setting is disabled", async () => {
+    const { firm, user } = await createFirmWithUser("ADMIN");
+    await prisma.firm.update({
+      where: { id: firm.id },
+      data: {
+        defaults: {
+          approvalSettings: { allowSelfApproval: false }
+        }
+      }
+    });
+    const client = await createClient(
+      { firmId: firm.id, userId: user.id },
+      {
+        name: "Self Reject Client",
+        payrollSystem: "BRIGHTPAY",
+        payrollFrequency: "MONTHLY"
+      }
+    );
+    const payRun = await createPayRun(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        clientId: client.id,
+        periodStart: new Date("2028-04-01T00:00:00Z"),
+        periodEnd: new Date("2028-04-30T00:00:00Z")
+      }
+    );
+
+    await prisma.payRun.update({
+      where: { id: payRun.id },
+      data: { status: "READY_FOR_REVIEW" }
+    });
+
+    await prisma.auditEvent.create({
+      data: {
+        firmId: firm.id,
+        actorUserId: user.id,
+        action: "PAY_RUN_SUBMITTED_FOR_REVIEW",
+        entityType: "PAY_RUN",
+        entityId: payRun.id
+      }
+    });
+
+    await expect(
+      rejectPayRun(
+        { firmId: firm.id, userId: user.id, role: user.role },
+        payRun.id,
+        "Needs changes."
+      )
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
   it("enforces role and validation constraints", async () => {
     const { firm, user } = await createFirmWithUser("REVIEWER");
     const client = await createClient(
@@ -511,7 +713,8 @@ describe("pay run review flow", () => {
     await expect(
       approvePayRun(
         { firmId: firm.id, userId: user.id, role: user.role },
-        payRun.id
+        payRun.id,
+        { comment: null }
       )
     ).rejects.toBeInstanceOf(ValidationError);
   });

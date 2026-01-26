@@ -73,10 +73,53 @@ describe("import preview", () => {
     expect(updated?.parseStatus).toBe("PARSED");
     expect(updated?.parseSummary).toEqual(
       expect.objectContaining({
-        previewRowCount: 2,
-        previewColumnCount: 2
+        rowCount: 2,
+        columnCount: 2
       })
     );
+  });
+
+  it("rejects preview for imports in error status", async () => {
+    const { firm, user } = await createFirmWithUser("ADMIN");
+    const client = await createClient(
+      { firmId: firm.id, userId: user.id },
+      {
+        name: "Preview Client Error",
+        payrollSystem: "OTHER",
+        payrollSystemOther: "Other",
+        payrollFrequency: "MONTHLY"
+      }
+    );
+    const payRun = await createPayRun(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      {
+        clientId: client.id,
+        periodStart: new Date("2026-08-01T00:00:00Z"),
+        periodEnd: new Date("2026-08-31T00:00:00Z")
+      }
+    );
+    const importRecord = await prisma.import.create({
+      data: {
+        firmId: firm.id,
+        clientId: client.id,
+        payRunId: payRun.id,
+        sourceType: "REGISTER",
+        version: 1,
+        storageUri: `s3://${storageBucket}/uploads/file-error.csv`,
+        fileHashSha256: "hash-preview-error",
+        originalFilename: "file-error.csv",
+        mimeType: "text/csv",
+        sizeBytes: 120,
+        uploadedByUserId: user.id,
+        parseStatus: "ERROR_PARSE_FAILED",
+        errorCode: "ERROR_PARSE_FAILED",
+        errorMessage: "Failed to parse."
+      }
+    });
+
+    await expect(
+      getImportPreview(firm.id, importRecord.id, null)
+    ).rejects.toBeInstanceOf(ValidationError);
   });
 
   it("keeps parse status when already mapped", async () => {
@@ -131,8 +174,8 @@ describe("import preview", () => {
     expect(updated?.parseStatus).toBe("READY");
     expect(updated?.parseSummary).toEqual(
       expect.objectContaining({
-        previewRowCount: 2,
-        previewColumnCount: 2
+        rowCount: 2,
+        columnCount: 2
       })
     );
   });
@@ -334,7 +377,7 @@ describe("import preview", () => {
     const updated = await prisma.import.findUnique({
       where: { id: importRecord.id }
     });
-    expect(updated?.parseStatus).toBe("ERROR");
+    expect(updated?.parseStatus).toBe("ERROR_PARSE_FAILED");
     expect(updated?.parseSummary).toEqual({ error: "Unable to parse file." });
   });
 
@@ -421,11 +464,16 @@ describe("import preview", () => {
       }
     });
 
+    const validXlsxHeader = Buffer.concat([
+      Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+      Buffer.from("xl/workbook.xml")
+    ]);
+
     vi.spyOn(
       storageClient as unknown as { send: () => Promise<unknown> },
       "send"
     ).mockResolvedValue({
-      Body: Buffer.from("fake")
+      Body: validXlsxHeader
     } as { Body: unknown });
 
     const readSpy = vi.spyOn(XLSX, "read").mockReturnValue({
@@ -436,6 +484,11 @@ describe("import preview", () => {
     await expect(
       getImportPreview(firm.id, importRecord.id, null)
     ).rejects.toBeInstanceOf(ValidationError);
+
+    const updated = await prisma.import.findUnique({
+      where: { id: importRecord.id }
+    });
+    expect(updated?.parseStatus).toBe("ERROR_PARSE_FAILED");
 
     readSpy.mockRestore();
   });
@@ -477,11 +530,16 @@ describe("import preview", () => {
       }
     });
 
+    const validXlsxHeader = Buffer.concat([
+      Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+      Buffer.from("xl/workbook.xml")
+    ]);
+
     vi.spyOn(
       storageClient as unknown as { send: () => Promise<unknown> },
       "send"
     ).mockResolvedValue({
-      Body: Buffer.from("fake")
+      Body: validXlsxHeader
     } as { Body: unknown });
 
     const readSpy = vi.spyOn(XLSX, "read").mockReturnValue({
@@ -492,6 +550,11 @@ describe("import preview", () => {
     await expect(
       getImportPreview(firm.id, importRecord.id, null)
     ).rejects.toBeInstanceOf(ValidationError);
+
+    const updated = await prisma.import.findUnique({
+      where: { id: importRecord.id }
+    });
+    expect(updated?.parseStatus).toBe("ERROR_PARSE_FAILED");
 
     readSpy.mockRestore();
   });
@@ -626,7 +689,7 @@ describe("import preview", () => {
     const updated = await prisma.import.findUnique({
       where: { id: importRecord.id }
     });
-    expect(updated?.parseStatus).toBe("ERROR");
+    expect(updated?.parseStatus).toBe("ERROR_PARSE_FAILED");
 
     parseSpy.mockRestore();
   });

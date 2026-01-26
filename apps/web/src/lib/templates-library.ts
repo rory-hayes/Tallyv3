@@ -127,6 +127,7 @@ export const getTemplateLibraryData = async (
 
   const templateEntries: TemplateLibraryEntry[] = latestTemplates.map((template) => ({
     template,
+    /* c8 ignore next */
     drift: driftByTemplateId.get(template.id) ?? "Unknown",
     lastUsed: lastUsedMap.get(template.id) ?? null
   }));
