@@ -6,6 +6,7 @@ import { createClient } from "@/lib/clients";
 import { createPayRun } from "@/lib/pay-runs";
 import { buildStorageKey, createImport } from "@/lib/imports";
 import { generatePack, getPackDownloadUrl, lockPack } from "@/lib/packs";
+import { resolveTolerances } from "@/lib/tolerances";
 import { storageClient } from "@/lib/storage";
 import { NotFoundError, ValidationError } from "@/lib/errors";
 import { createFirmWithUser, resetDb } from "./test-db";
@@ -293,6 +294,68 @@ describe("pack generation and locking", () => {
     expect(pdfText).toContain("note: Bank batch split.");
   });
 
+  it("includes import metadata and tolerances in pack output", async () => {
+    const { firm, user, payRun } = await seedApprovedPayRun();
+    const sendSpy = vi
+      .spyOn(
+        storageClient as unknown as {
+          send: (command: { input?: { Body?: unknown } }) => Promise<unknown>;
+        },
+        "send"
+      )
+      .mockResolvedValueOnce({});
+
+    await generatePack(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id
+    );
+
+    const command = sendSpy.mock.calls[0]?.[0] as { input?: { Body?: Buffer } };
+    const pdfBody = command.input?.Body as Buffer;
+    const pdfText = pdfBody.toString("utf8");
+
+    expect(pdfText).toContain("register.csv");
+    expect(pdfText).toContain("template v1");
+    expect(pdfText).toContain("Tolerances:");
+    expect(pdfText).toContain("Register vs bank:");
+  });
+
+  it("includes preparer submission details in pack output", async () => {
+    const { firm, user, payRun } = await seedApprovedPayRun();
+    const preparedAt = new Date("2027-07-15T12:30:00Z");
+    await prisma.auditEvent.create({
+      data: {
+        firmId: firm.id,
+        actorUserId: user.id,
+        action: "PAY_RUN_SUBMITTED_FOR_REVIEW",
+        entityType: "PAY_RUN",
+        entityId: payRun.id,
+        timestamp: preparedAt
+      }
+    });
+
+    const sendSpy = vi
+      .spyOn(
+        storageClient as unknown as {
+          send: (command: { input?: { Body?: unknown } }) => Promise<unknown>;
+        },
+        "send"
+      )
+      .mockResolvedValueOnce({});
+
+    await generatePack(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id
+    );
+
+    const command = sendSpy.mock.calls[0]?.[0] as { input?: { Body?: Buffer } };
+    const pdfBody = command.input?.Body as Buffer;
+    const pdfText = pdfBody.toString("utf8");
+    expect(pdfText).toContain(
+      `Prepared by: ${user.email} at ${preparedAt.toISOString()}`
+    );
+  });
+
   it("generates packs when input summaries are missing", async () => {
     const { firm, user } = await createFirmWithUser("ADMIN");
     const client = await createClient(
@@ -413,6 +476,75 @@ describe("pack generation and locking", () => {
         maskBankDetails: true,
         maskNiNumbers: false
       }
+    });
+  });
+
+  it("stores tolerances and expected variances in pack metadata", async () => {
+    const { firm, user, payRun } = await seedApprovedPayRun();
+
+    const run = await prisma.reconciliationRun.findFirst({
+      where: { payRunId: payRun.id }
+    });
+    expect(run).not.toBeNull();
+
+    await prisma.checkResult.create({
+      data: {
+        reconciliationRunId: run!.id,
+        checkType: "CHK_REGISTER_NET_TO_BANK_TOTAL",
+        checkVersion: "v1",
+        status: "WARN",
+        severity: "LOW",
+        summary: "Variance applied",
+        details: {
+          leftLabel: "Register net total",
+          rightLabel: "Bank total",
+          leftValue: 1000,
+          rightValue: 1001,
+          deltaValue: -1,
+          deltaPercent: 0.1,
+          formula: "Register - Bank",
+          toleranceApplied: { absolute: 1, percent: 0.1, applied: 1 },
+          expectedVariance: {
+            id: "variance-id",
+            varianceType: "ROUNDING",
+            downgradeTo: "WARN",
+            requiresNote: false,
+            requiresAttachment: false,
+            requiresReviewerAck: false
+          }
+        }
+      }
+    });
+
+    vi.spyOn(storageClient as unknown as { send: () => Promise<unknown> }, "send")
+      .mockResolvedValueOnce({});
+
+    const pack = await generatePack(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      payRun.id
+    );
+
+    const storedPack = await prisma.pack.findFirst({
+      where: { id: pack.id },
+      include: { payRun: { include: { firm: true, client: true } } }
+    });
+
+    const expectedTolerances = resolveTolerances({
+      region: storedPack!.payRun.firm.region,
+      firmDefaults: storedPack!.payRun.firm.defaults,
+      clientSettings: storedPack!.payRun.client.settings,
+      payRunSettings: storedPack!.payRun.settings
+    });
+
+    expect(storedPack?.metadata).toMatchObject({
+      tolerances: expectedTolerances,
+      expectedVariancesApplied: [
+        {
+          checkType: "CHK_REGISTER_NET_TO_BANK_TOTAL",
+          varianceType: "ROUNDING",
+          downgradeTo: "WARN"
+        }
+      ]
     });
   });
 
@@ -537,7 +669,8 @@ describe("pack generation and locking", () => {
         details: {
           ...((check!.details as Record<string, unknown>) ?? {}),
           deltaValue: null,
-          deltaPercent: null
+          deltaPercent: null,
+          toleranceApplied: null
         }
       }
     });
@@ -562,7 +695,8 @@ describe("pack generation and locking", () => {
     );
 
     const pdfText = capturedBody ? Buffer.from(capturedBody).toString("utf8") : "";
-    expect(pdfText).toContain("- CHK_REGISTER_NET_TO_BANK_TOTAL PASS INFO");
+    expect(pdfText).toContain("CHK_REGISTER_NET_TO_BANK_TOTAL");
+    expect(pdfText).toContain("PASS INFO");
     expect(pdfText).not.toContain("delta");
   });
 
