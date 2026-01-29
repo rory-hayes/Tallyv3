@@ -8,3 +8,5 @@ coverage
 .turbo
 pnpm-debug.log
 mcp-credentials.local.md
+.vercel
+.env*.local

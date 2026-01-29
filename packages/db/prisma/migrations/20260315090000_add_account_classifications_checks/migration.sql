@@ -1,14 +1,19 @@
 -- Account classification mapping and expanded check types
-CREATE TYPE "AccountClass" AS ENUM (
-  'EXPENSE',
-  'NET_PAYABLE',
-  'TAX_PAYABLE',
-  'NI_PRSI_PAYABLE',
-  'PENSION_PAYABLE',
-  'CASH',
-  'OTHER'
-);
-
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'AccountClass') THEN
+    CREATE TYPE "AccountClass" AS ENUM (
+      'EXPENSE',
+      'NET_PAYABLE',
+      'TAX_PAYABLE',
+      'NI_PRSI_PAYABLE',
+      'PENSION_PAYABLE',
+      'CASH',
+      'OTHER'
+    );
+  END IF;
+END
+$$;
 ALTER TYPE "CheckType" ADD VALUE IF NOT EXISTS 'CHK_REGISTER_DEDUCTIONS_TO_STATUTORY_TOTALS';
 ALTER TYPE "CheckType" ADD VALUE IF NOT EXISTS 'CHK_REGISTER_GROSS_TO_JOURNAL_EXPENSE';
 ALTER TYPE "CheckType" ADD VALUE IF NOT EXISTS 'CHK_REGISTER_EMPLOYER_COSTS_TO_JOURNAL_EXPENSE';
@@ -21,7 +26,7 @@ ALTER TYPE "CheckType" ADD VALUE IF NOT EXISTS 'CHK_BANK_PAYMENT_COUNT_MISMATCH'
 
 ALTER TYPE "ExceptionCategory" ADD VALUE IF NOT EXISTS 'BANK_DATA_QUALITY';
 
-CREATE TABLE "AccountClassification" (
+CREATE TABLE IF NOT EXISTS "AccountClassification" (
   "id" UUID NOT NULL DEFAULT gen_random_uuid(),
   "firmId" UUID NOT NULL,
   "clientId" UUID NOT NULL,
@@ -35,7 +40,7 @@ CREATE TABLE "AccountClassification" (
   CONSTRAINT "AccountClassification_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "Client"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-CREATE UNIQUE INDEX "AccountClassification_clientId_accountCode_key"
+CREATE UNIQUE INDEX IF NOT EXISTS "AccountClassification_clientId_accountCode_key"
   ON "AccountClassification"("clientId", "accountCode");
-CREATE INDEX "AccountClassification_firmId_clientId_idx"
+CREATE INDEX IF NOT EXISTS "AccountClassification_firmId_clientId_idx"
   ON "AccountClassification"("firmId", "clientId");
