@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 import {
   prisma,
+  Prisma,
   type ImportErrorCode,
   type ImportStatus,
   type SourceType,
@@ -153,7 +154,7 @@ export const queueImportParse = async (
     where: { id: importRecord.id },
     data: {
       parseStatus: "PARSING",
-      parseSummary: null,
+      parseSummary: Prisma.JsonNull,
       errorCode: null,
       errorMessage: null
     }
