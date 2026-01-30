@@ -547,7 +547,10 @@ const ensureMappedImport = (
   if (entry.parseStatus === "UPLOADED" || entry.parseStatus === "PARSING") {
     throw new ValidationError(`Parse ${source} import before reconciliation.`);
   }
-  if (entry.parseStatus === "MAPPING_REQUIRED") {
+  if (entry.parseStatus === "PARSED" || entry.parseStatus === "MAPPING_REQUIRED") {
+    throw new ValidationError(`Mapping required for ${source} import.`);
+  }
+  if (entry.parseStatus !== "MAPPED" && entry.parseStatus !== "READY") {
     throw new ValidationError(`Mapping required for ${source} import.`);
   }
   if (!entry.mappingTemplateVersion) {
@@ -602,7 +605,8 @@ export const runReconciliation = async (
     const imports = await prisma.import.findMany({
       where: {
         firmId: context.firmId,
-        payRunId: payRun.id
+        payRunId: payRun.id,
+        deletedAt: null
       },
       include: {
         mappingTemplateVersion: true
@@ -642,9 +646,8 @@ export const runReconciliation = async (
       ? ensureMappedImport("STATUTORY", statutoryEntry)
       : statutoryEntry &&
           !isImportErrorStatus(statutoryEntry.parseStatus) &&
-          statutoryEntry.parseStatus !== "UPLOADED" &&
-          statutoryEntry.parseStatus !== "PARSING" &&
-          statutoryEntry.parseStatus !== "MAPPING_REQUIRED" &&
+          (statutoryEntry.parseStatus === "MAPPED" ||
+            statutoryEntry.parseStatus === "READY") &&
           statutoryEntry.mappingTemplateVersion
         ? (statutoryEntry as ImportWithTemplate & {
             mappingTemplateVersion: MappingTemplate;
@@ -654,9 +657,8 @@ export const runReconciliation = async (
     const pensionScheduleImport =
       pensionScheduleEntry &&
       !isImportErrorStatus(pensionScheduleEntry.parseStatus) &&
-      pensionScheduleEntry.parseStatus !== "UPLOADED" &&
-      pensionScheduleEntry.parseStatus !== "PARSING" &&
-      pensionScheduleEntry.parseStatus !== "MAPPING_REQUIRED" &&
+      (pensionScheduleEntry.parseStatus === "MAPPED" ||
+        pensionScheduleEntry.parseStatus === "READY") &&
       pensionScheduleEntry.mappingTemplateVersion
         ? (pensionScheduleEntry as ImportWithTemplate & {
             mappingTemplateVersion: MappingTemplate;

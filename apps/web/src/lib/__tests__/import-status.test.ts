@@ -16,13 +16,14 @@ describe("import status helpers", () => {
   it("allows valid transitions", () => {
     expect(() => assertImportTransition("UPLOADED", "PARSING")).not.toThrow();
     expect(() => assertImportTransition("PARSING", "PARSED")).not.toThrow();
-    expect(() => assertImportTransition("PARSED", "READY")).not.toThrow();
+    expect(() => assertImportTransition("PARSED", "MAPPED")).not.toThrow();
+    expect(() => assertImportTransition("MAPPED", "READY")).not.toThrow();
     expect(() => assertImportTransition("ERROR_PARSE_FAILED", "PARSING")).not.toThrow();
   });
 
   it("rejects invalid transitions", () => {
-    expect(() => assertImportTransition("READY", "PARSING")).toThrow(
-      "Import cannot move from READY to PARSING."
+    expect(() => assertImportTransition("PARSED", "READY")).toThrow(
+      "Import cannot move from PARSED to READY."
     );
   });
 

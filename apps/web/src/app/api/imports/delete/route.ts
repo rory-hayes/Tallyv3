@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
-import { queueImportParse } from "@/lib/imports";
+import { deleteImport } from "@/lib/imports";
 import { PermissionError, requirePermission } from "@/lib/permissions";
 import { NotFoundError, ValidationError } from "@/lib/errors";
 
-const retrySchema = z.object({
+const deleteSchema = z.object({
   importId: z.string().uuid()
 });
 
@@ -25,22 +25,21 @@ export const POST = async (request: Request) => {
   }
 
   const body = await request.json();
-  const parsed = retrySchema.safeParse(body);
+  const parsed = deleteSchema.safeParse(body);
   if (!parsed.success) {
-    return errorResponse(400, "Invalid retry request.");
+    return errorResponse(400, "Invalid delete request.");
   }
 
   try {
-    const result = await queueImportParse(
+    await deleteImport(
       {
         firmId: session.firmId,
         userId: session.userId,
         role: user.role
       },
-      parsed.data.importId,
-      { force: true }
+      parsed.data.importId
     );
-    return NextResponse.json({ ok: true, jobId: result.job.id });
+    return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof NotFoundError) {
       return errorResponse(404, error.message);

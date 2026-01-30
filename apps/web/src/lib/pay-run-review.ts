@@ -46,7 +46,8 @@ export const getReviewGateStatus = async (
   const imports = await prisma.import.findMany({
     where: {
       firmId,
-      payRunId
+      payRunId,
+      deletedAt: null
     },
     orderBy: [{ sourceType: "asc" }, { version: "desc" }]
   });

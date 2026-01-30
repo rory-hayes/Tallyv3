@@ -20,13 +20,14 @@ export const getImportPreview = async (
   importId: string,
   sheetName?: string | null,
   actorUserId?: string | null,
-  options?: { force?: boolean }
+  options?: { force?: boolean; updateStatus?: boolean }
 ) => {
   const span = startSpan("IMPORT_PREVIEW", { firmId, importId });
   const importRecord = await prisma.import.findFirst({
     where: {
       id: importId,
-      firmId
+      firmId,
+      deletedAt: null
     }
   });
 
@@ -34,17 +35,28 @@ export const getImportPreview = async (
     throw new NotFoundError("Import not found.");
   }
 
+  const updateStatus = options?.updateStatus !== false;
+  const retryRequested = updateStatus && options?.force === true;
   const canRetry =
-    options?.force === true && importRecord.parseStatus === "ERROR_PARSE_FAILED";
+    retryRequested && importRecord.parseStatus === "ERROR_PARSE_FAILED";
 
   if (isImportErrorStatus(importRecord.parseStatus) && !canRetry) {
     throw new ValidationError("This import failed validation. Re-upload the file.");
   }
 
+  if (
+    !updateStatus &&
+    (importRecord.parseStatus === "UPLOADED" ||
+      importRecord.parseStatus === "PARSING")
+  ) {
+    throw new ValidationError("This import is still parsing. Retry shortly.");
+  }
+
   const shouldUpdateStatus =
-    canRetry ||
-    importRecord.parseStatus === "UPLOADED" ||
-    importRecord.parseStatus === "PARSING";
+    updateStatus &&
+    (canRetry ||
+      importRecord.parseStatus === "UPLOADED" ||
+      importRecord.parseStatus === "PARSING");
 
   if (shouldUpdateStatus) {
     const fromStatus = canRetry ? "ERROR_PARSE_FAILED" : importRecord.parseStatus;
@@ -67,7 +79,7 @@ export const getImportPreview = async (
           metadata: {
             sourceType: importRecord.sourceType,
             version: importRecord.version,
-            retry: canRetry
+            retry: retryRequested
           }
         },
         {
@@ -101,44 +113,46 @@ export const getImportPreview = async (
       sheetNames: preview.sheetNames
     };
 
-    const nextStatus: ImportStatus = shouldUpdateStatus
-      ? "PARSED"
-      : importRecord.parseStatus;
+    if (updateStatus) {
+      const nextStatus: ImportStatus = shouldUpdateStatus
+        ? "PARSED"
+        : importRecord.parseStatus;
 
-    if (shouldUpdateStatus) {
-      assertImportTransition("PARSING", nextStatus);
-    }
-
-    await prisma.import.update({
-      where: { id: importRecord.id },
-      data: {
-        parseStatus: nextStatus,
-        parseSummary,
-        errorCode: null,
-        errorMessage: null
+      if (shouldUpdateStatus) {
+        assertImportTransition("PARSING", nextStatus);
       }
-    });
 
-    if (shouldUpdateStatus) {
-      await recordAuditEvent(
-        {
-          action: "IMPORT_PARSED",
-          entityType: "IMPORT",
-          entityId: importRecord.id,
-          metadata: {
-            sourceType: importRecord.sourceType,
-            version: importRecord.version,
-            rowCount: preview.rowCount,
-            columnCount: preview.columnCount,
-            sheetCount: preview.sheetNames.length,
-            retry: canRetry
-          }
-        },
-        {
-          firmId,
-          actorUserId: actorUserId ?? null
+      await prisma.import.update({
+        where: { id: importRecord.id },
+        data: {
+          parseStatus: nextStatus,
+          parseSummary,
+          errorCode: null,
+          errorMessage: null
         }
-      );
+      });
+
+      if (shouldUpdateStatus) {
+        await recordAuditEvent(
+          {
+            action: "IMPORT_PARSED",
+            entityType: "IMPORT",
+            entityId: importRecord.id,
+            metadata: {
+              sourceType: importRecord.sourceType,
+              version: importRecord.version,
+              rowCount: preview.rowCount,
+              columnCount: preview.columnCount,
+              sheetCount: preview.sheetNames.length,
+              retry: retryRequested
+            }
+          },
+          {
+            firmId,
+            actorUserId: actorUserId ?? null
+          }
+        );
+      }
     }
 
     span.end({ status: "SUCCESS" });
@@ -151,36 +165,38 @@ export const getImportPreview = async (
         ? "ERROR_FILE_INVALID"
         : "ERROR_PARSE_FAILED";
 
-    if (shouldUpdateStatus) {
-      assertImportTransition("PARSING", errorCode);
-    }
+    if (updateStatus) {
+      if (shouldUpdateStatus) {
+        assertImportTransition("PARSING", errorCode);
+      }
 
-    await prisma.import.update({
-      where: { id: importRecord.id },
-      data: {
-        parseStatus: errorCode,
-        errorCode,
-        errorMessage: message,
-        parseSummary: { error: message }
-      }
-    });
-    await recordAuditEvent(
-      {
-        action: "IMPORT_ERROR",
-        entityType: "IMPORT",
-        entityId: importRecord.id,
-        metadata: {
-          sourceType: importRecord.sourceType,
-          version: importRecord.version,
+      await prisma.import.update({
+        where: { id: importRecord.id },
+        data: {
+          parseStatus: errorCode,
           errorCode,
-          retry: canRetry
+          errorMessage: message,
+          parseSummary: { error: message }
         }
-      },
-      {
-        firmId,
-        actorUserId: actorUserId ?? null
-      }
-    );
+      });
+      await recordAuditEvent(
+        {
+          action: "IMPORT_ERROR",
+          entityType: "IMPORT",
+          entityId: importRecord.id,
+          metadata: {
+            sourceType: importRecord.sourceType,
+            version: importRecord.version,
+            errorCode,
+            retry: retryRequested
+          }
+        },
+        {
+          firmId,
+          actorUserId: actorUserId ?? null
+        }
+      );
+    }
     span.fail(error, { status: "FAILED" });
     throw error;
   }

@@ -25,7 +25,8 @@ export default async function ImportMappingPage({
   const importRecord = await prisma.import.findFirst({
     where: {
       id: params.importId,
-      firmId: session.firmId
+      firmId: session.firmId,
+      deletedAt: null
     },
     include: {
       payRun: {

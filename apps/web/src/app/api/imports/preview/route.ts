@@ -36,7 +36,8 @@ export const POST = async (request: Request) => {
       session.firmId,
       parsed.data.importId,
       parsed.data.sheetName,
-      session.userId
+      session.userId,
+      { updateStatus: false }
     );
     return NextResponse.json(preview);
   } catch (error) {

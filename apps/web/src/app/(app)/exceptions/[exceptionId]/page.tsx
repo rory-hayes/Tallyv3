@@ -236,7 +236,8 @@ export default async function ExceptionDetailPage({
   const latestImports = await prisma.import.findMany({
     where: {
       firmId: session.firmId,
-      payRunId: exception.payRunId
+      payRunId: exception.payRunId,
+      deletedAt: null
     },
     orderBy: [{ sourceType: "asc" }, { version: "desc" }]
   });

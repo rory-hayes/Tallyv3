@@ -6,7 +6,8 @@ import { PermissionError, requirePermission } from "@/lib/permissions";
 import {
   assertStorageKeyMatches,
   createImport,
-  isAllowedUpload
+  isAllowedUpload,
+  queueImportParse
 } from "@/lib/imports";
 import {
   ConflictError,
@@ -142,6 +143,17 @@ export const POST = async (request: Request) => {
         errorMessage: validationError?.message ?? null
       }
     );
+
+    if (!validationError && !result.duplicate) {
+      await queueImportParse(
+        {
+          firmId: session.firmId,
+          userId: session.userId,
+          role: user.role
+        },
+        result.importRecord.id
+      );
+    }
 
     if (validationError) {
       return NextResponse.json(

@@ -503,7 +503,8 @@ export const generatePack = async (context: ActorContext, payRunId: string) => {
       : await prisma.import.findMany({
           where: {
             firmId: context.firmId,
-            payRunId
+            payRunId,
+            deletedAt: null
           },
           include: { mappingTemplateVersion: true },
           orderBy: [{ sourceType: "asc" }, { version: "desc" }]

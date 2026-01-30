@@ -1,6 +1,7 @@
 import { Prisma, prisma, type Job } from "@tally/db";
 import { generatePack } from "@/lib/packs";
 import { runReconciliation } from "@/lib/reconciliation";
+import { getImportPreview } from "@/lib/import-preview";
 import { logError, logInfo } from "@/lib/logger";
 
 type JobPayload = Record<string, unknown>;
@@ -17,6 +18,13 @@ type PackPayload = {
   payRunId: string;
   actorUserId: string;
   actorRole: "ADMIN" | "PREPARER" | "REVIEWER";
+};
+
+type ImportParsePayload = {
+  firmId: string;
+  importId: string;
+  actorUserId: string;
+  retry?: boolean;
 };
 
 const WORKER_ID = process.env.WORKER_ID ?? `worker-${process.pid}`;
@@ -88,6 +96,35 @@ const handleJob = async (job: Job) => {
         },
         data.payRunId
       );
+      return;
+    }
+    case "IMPORT_PARSE": {
+      const data = payload as ImportParsePayload;
+      const firmId = data.firmId ?? job.firmId ?? "";
+      if (!firmId) {
+        throw new Error("Import parse job missing firmId.");
+      }
+      const importRecord = await prisma.import.findFirst({
+        where: {
+          id: data.importId,
+          firmId
+        }
+      });
+      if (!importRecord || importRecord.deletedAt) {
+        return;
+      }
+      const canRetry =
+        data.retry === true && importRecord.parseStatus === "ERROR_PARSE_FAILED";
+      const shouldParse =
+        importRecord.parseStatus === "UPLOADED" ||
+        importRecord.parseStatus === "PARSING" ||
+        canRetry;
+      if (!shouldParse) {
+        return;
+      }
+      await getImportPreview(firmId, importRecord.id, null, data.actorUserId, {
+        force: data.retry === true
+      });
       return;
     }
     case "PACK_GENERATE": {

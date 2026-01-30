@@ -269,6 +269,7 @@ model User {
   auditEvents AuditEvent[] @relation("AuditActor")
   defaultReviewClients Client[] @relation("ClientDefaultReviewer")
   uploadedImports Import[]
+  deletedImports Import[] @relation("ImportDeletedBy")
   createdMappingTemplates MappingTemplate[]
   reconciliationRuns ReconciliationRun[]
   assignedExceptions Exception[] @relation("ExceptionAssignedTo")
@@ -401,6 +402,9 @@ model Import {
   uploadedByUserId       String            @db.Uuid
   uploadedByUser         User              @relation(fields: [uploadedByUserId], references: [id])
   uploadedAt             DateTime          @default(now())
+  deletedAt              DateTime?
+  deletedByUserId        String?           @db.Uuid
+  deletedByUser          User?             @relation("ImportDeletedBy", fields: [deletedByUserId], references: [id])
   parseStatus            ImportStatus      @default(UPLOADED)
   errorCode              ImportErrorCode?
   errorMessage           String?
@@ -415,6 +419,7 @@ model Import {
   @@index([clientId])
   @@index([payRunId])
   @@index([uploadedByUserId])
+  @@index([deletedAt])
 }
 
 model MappingTemplate {

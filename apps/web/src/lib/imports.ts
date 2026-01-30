@@ -5,13 +5,16 @@ import {
   prisma,
   type ImportErrorCode,
   type ImportStatus,
-  type SourceType
+  type SourceType,
+  type Job
 } from "@/lib/prisma";
 import { recordAuditEvent } from "./audit";
 import { ConflictError, NotFoundError, ValidationError } from "./errors";
 import { transitionPayRunStatus } from "./pay-runs";
-import { isImportErrorStatus } from "./import-status";
+import { assertImportTransition, isImportErrorStatus } from "./import-status";
 import { storageBucket } from "./storage";
+import { enqueueJob } from "./jobs";
+import { runJobInline } from "./job-runner";
 
 export type ImportInput = {
   payRunId: string;
@@ -35,6 +38,11 @@ type ActorContext = {
 export type ImportCreateResult = {
   importRecord: Awaited<ReturnType<typeof prisma.import.create>>;
   duplicate: boolean;
+};
+
+export type ImportParseQueueResult = {
+  job: Job;
+  retry: boolean;
 };
 
 const allowedExtensions = [".csv", ".xlsx"];
@@ -98,6 +106,147 @@ const getPayRunForImport = async (firmId: string, payRunId: string) => {
 
 const resolveStorageUri = (storageKey: string): string => {
   return `s3://${storageBucket}/${storageKey}`;
+};
+
+export const queueImportParse = async (
+  context: ActorContext,
+  importId: string,
+  options?: { force?: boolean }
+): Promise<ImportParseQueueResult> => {
+  const importRecord = await prisma.import.findFirst({
+    where: {
+      id: importId,
+      firmId: context.firmId,
+      deletedAt: null
+    }
+  });
+
+  if (!importRecord) {
+    throw new NotFoundError("Import not found.");
+  }
+
+  await getPayRunForImport(context.firmId, importRecord.payRunId);
+
+  const retry =
+    options?.force === true && importRecord.parseStatus === "ERROR_PARSE_FAILED";
+
+  if (isImportErrorStatus(importRecord.parseStatus) && !retry) {
+    throw new ValidationError("This import failed validation. Re-upload the file.");
+  }
+
+  if (importRecord.parseStatus === "PARSING") {
+    throw new ValidationError("This import is already parsing.");
+  }
+
+  if (
+    importRecord.parseStatus === "PARSED" ||
+    importRecord.parseStatus === "MAPPED" ||
+    importRecord.parseStatus === "READY"
+  ) {
+    throw new ValidationError("This import has already been parsed.");
+  }
+
+  const fromStatus = retry ? "ERROR_PARSE_FAILED" : importRecord.parseStatus;
+  assertImportTransition(fromStatus, "PARSING");
+
+  await prisma.import.update({
+    where: { id: importRecord.id },
+    data: {
+      parseStatus: "PARSING",
+      parseSummary: null,
+      errorCode: null,
+      errorMessage: null
+    }
+  });
+
+  await recordAuditEvent(
+    {
+      action: "IMPORT_PARSING_STARTED",
+      entityType: "IMPORT",
+      entityId: importRecord.id,
+      metadata: {
+        sourceType: importRecord.sourceType,
+        version: importRecord.version,
+        retry
+      }
+    },
+    {
+      firmId: context.firmId,
+      actorUserId: context.userId
+    }
+  );
+
+  const job = await enqueueJob({
+    firmId: context.firmId,
+    type: "IMPORT_PARSE",
+    payload: {
+      firmId: context.firmId,
+      importId: importRecord.id,
+      actorUserId: context.userId,
+      retry
+    },
+    payRunId: importRecord.payRunId,
+    importId: importRecord.id,
+    maxAttempts: 2
+  });
+
+  if (process.env.JOBS_INLINE === "true") {
+    await runJobInline(job);
+  }
+
+  return { job, retry };
+};
+
+export const deleteImport = async (
+  context: ActorContext,
+  importId: string
+) => {
+  const importRecord = await prisma.import.findFirst({
+    where: {
+      id: importId,
+      firmId: context.firmId,
+      deletedAt: null
+    },
+    include: {
+      payRun: true
+    }
+  });
+
+  if (!importRecord) {
+    throw new NotFoundError("Import not found.");
+  }
+
+  if (importRecord.payRun.status === "LOCKED" || importRecord.payRun.status === "ARCHIVED") {
+    throw new ValidationError("Locked pay runs cannot delete imports.");
+  }
+
+  const deletedAt = new Date();
+  const updated = await prisma.import.update({
+    where: { id: importRecord.id },
+    data: {
+      deletedAt,
+      deletedByUserId: context.userId
+    }
+  });
+
+  await recordAuditEvent(
+    {
+      action: "IMPORT_DELETED",
+      entityType: "IMPORT",
+      entityId: importRecord.id,
+      metadata: {
+        payRunId: importRecord.payRunId,
+        sourceType: importRecord.sourceType,
+        version: importRecord.version
+      }
+    },
+    {
+      firmId: context.firmId,
+      actorUserId: context.userId
+    }
+  );
+
+  return updated;
 };
 
 export const createImport = async (

@@ -49,11 +49,12 @@ export const getDashboardData = async (firmId: string): Promise<DashboardData> =
 
   const payRunIds = payRuns.map((payRun) => payRun.id);
   const imports = payRunIds.length
-    ? await prisma.import.findMany({
+      ? await prisma.import.findMany({
         where: {
           firmId,
           payRunId: { in: payRunIds },
-          sourceType: { in: requiredSources }
+          sourceType: { in: requiredSources },
+          deletedAt: null
         },
         select: {
           payRunId: true,

@@ -14,6 +14,7 @@ import { ReconciliationRunner } from "./ReconciliationRunner";
 import { PayRunReviewActions } from "./PayRunReviewActions";
 import { PackActions } from "./PackActions";
 import { ImportRetryButton } from "@/components/ImportRetryButton";
+import { ImportDeleteButton } from "@/components/ImportDeleteButton";
 
 export const dynamic = "force-dynamic";
 
@@ -86,7 +87,8 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
   const imports = await prisma.import.findMany({
     where: {
       firmId: session.firmId,
-      payRunId: payRun.id
+      payRunId: payRun.id,
+      deletedAt: null
     },
     include: {
       uploadedByUser: true,
@@ -301,6 +303,12 @@ export default async function PayRunDetailPage({ params }: PayRunDetailPageProps
                     ) : null}
                     {latest && latest.parseStatus === "ERROR_PARSE_FAILED" ? (
                       <ImportRetryButton
+                        importId={latest.id}
+                        disabled={isLocked}
+                      />
+                    ) : null}
+                    {latest ? (
+                      <ImportDeleteButton
                         importId={latest.id}
                         disabled={isLocked}
                       />

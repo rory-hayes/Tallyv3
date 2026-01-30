@@ -67,7 +67,8 @@ const ensureImportForMapping = async (firmId: string, importId: string) => {
   const importRecord = await prisma.import.findFirst({
     where: {
       id: importId,
-      firmId
+      firmId,
+      deletedAt: null
     },
     include: {
       firm: true,
@@ -252,7 +253,8 @@ const maybeTransitionToMapped = async (
     where: {
       payRunId,
       firmId: context.firmId,
-      sourceType: { in: requiredSources }
+      sourceType: { in: requiredSources },
+      deletedAt: null
     },
     orderBy: [{ sourceType: "asc" }, { version: "desc" }]
   });
@@ -305,7 +307,8 @@ const maybeTransitionImportsReady = async (
     where: {
       payRunId,
       firmId: context.firmId,
-      sourceType: { in: requiredSources }
+      sourceType: { in: requiredSources },
+      deletedAt: null
     },
     orderBy: [{ sourceType: "asc" }, { version: "desc" }]
   });
@@ -322,30 +325,36 @@ const maybeTransitionImportsReady = async (
     .filter(Boolean);
 
   const importsToReady = latestImports.filter(
-    (entry) => entry && entry.parseStatus !== "READY"
+    (entry) => entry && entry.parseStatus === "MAPPED"
   );
 
   const allReady = latestImports.every(
     (entry) =>
       entry &&
       entry.mappingTemplateVersionId &&
-      !isImportErrorStatus(entry.parseStatus)
+      (entry.parseStatus === "MAPPED" || entry.parseStatus === "READY")
   );
 
   if (!allReady) {
     return;
   }
 
-  await prisma.import.updateMany({
-    where: {
-      id: { in: latestImports.map((entry) => entry!.id) }
-    },
-    data: {
-      parseStatus: "READY",
-      errorCode: null,
-      errorMessage: null
-    }
-  });
+  for (const entry of importsToReady) {
+    assertImportTransition(entry!.parseStatus, "READY");
+  }
+
+  if (importsToReady.length > 0) {
+    await prisma.import.updateMany({
+      where: {
+        id: { in: importsToReady.map((entry) => entry!.id) }
+      },
+      data: {
+        parseStatus: "READY",
+        errorCode: null,
+        errorMessage: null
+      }
+    });
+  }
 
   await Promise.all(
     importsToReady.map((entry) =>
