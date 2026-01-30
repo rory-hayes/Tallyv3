@@ -9,6 +9,8 @@ export const resetDb = async () => {
   await prisma.accountClassification.deleteMany();
   await prisma.expectedVariance.deleteMany();
   await prisma.approval.deleteMany();
+  await prisma.job.deleteMany();
+  await prisma.normalizedDataset.deleteMany();
   await prisma.import.deleteMany();
   await prisma.mappingTemplate.deleteMany();
   await prisma.payRun.deleteMany();

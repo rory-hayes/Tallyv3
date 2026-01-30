@@ -4,6 +4,7 @@ import { prisma, type Job } from "@/lib/prisma";
 import { runReconciliation } from "@/lib/reconciliation";
 import { generatePack } from "@/lib/packs";
 import { getImportPreview } from "@/lib/import-preview";
+import { normalizeImport } from "@/lib/normalized-datasets";
 
 type JobPayload = Record<string, unknown>;
 
@@ -26,6 +27,13 @@ type ImportParsePayload = {
   importId: string;
   actorUserId: string;
   retry?: boolean;
+};
+
+type ImportNormalizePayload = {
+  firmId: string;
+  importId: string;
+  actorUserId: string;
+  actorRole: "ADMIN" | "PREPARER" | "REVIEWER";
 };
 
 const handleInlineJob = async (job: Job) => {
@@ -70,6 +78,18 @@ const handleInlineJob = async (job: Job) => {
       await getImportPreview(firmId, importRecord.id, null, data.actorUserId, {
         force: data.retry === true
       });
+      return;
+    }
+    case "IMPORT_NORMALIZE": {
+      const data = payload as ImportNormalizePayload;
+      await normalizeImport(
+        {
+          firmId: data.firmId ?? job.firmId ?? "",
+          userId: data.actorUserId,
+          role: data.actorRole
+        },
+        data.importId
+      );
       return;
     }
     case "PACK_GENERATE": {

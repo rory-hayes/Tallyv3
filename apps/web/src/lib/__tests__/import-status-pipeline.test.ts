@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/clients";
 import { createPayRun } from "@/lib/pay-runs";
@@ -6,12 +6,38 @@ import { applyMappingTemplate } from "@/lib/mapping-templates";
 import { buildStorageKey, createImport } from "@/lib/imports";
 import { sha256FromString } from "@/lib/hash";
 import { ValidationError } from "@/lib/errors";
+import { normalizeImport } from "@/lib/normalized-datasets";
+import { storageClient } from "@/lib/storage";
 import { createFirmWithUser, resetDb } from "./test-db";
 
 describe("import status pipeline", () => {
   beforeEach(async () => {
     await resetDb();
   });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  type StorageCommand = {
+    input?: {
+      Key?: string;
+    };
+  };
+
+  const mockStorage = (contents: Map<string, string>) => {
+    vi.spyOn(
+      storageClient as unknown as { send: (command: StorageCommand) => Promise<unknown> },
+      "send"
+    ).mockImplementation(async (command: StorageCommand) => {
+      const key = command.input?.Key ?? "";
+      if (!contents.has(key)) {
+        throw new Error(`Unexpected storage key: ${key}`);
+      }
+      const body = contents.get(key) ?? "";
+      return { Body: Buffer.from(body) } as { Body: unknown };
+    });
+  };
 
   const createParsedImport = async (
     context: Parameters<typeof createImport>[0],
@@ -40,7 +66,7 @@ describe("import status pipeline", () => {
       where: { id: result.importRecord.id },
       data: { parseStatus: "PARSED" }
     });
-    return result.importRecord;
+    return { importRecord: result.importRecord, storageKey };
   };
 
   it("marks required imports as READY after all mappings", async () => {
@@ -91,7 +117,7 @@ describe("import status pipeline", () => {
     await applyMappingTemplate(
       { firmId: firm.id, userId: user.id, role: user.role },
       {
-        importId: registerImport.id,
+        importId: registerImport.importRecord.id,
         templateName: "Register Template",
         sourceColumns: ["Employee", "Net", "Tax"],
         columnMap: {
@@ -106,7 +132,7 @@ describe("import status pipeline", () => {
     await applyMappingTemplate(
       { firmId: firm.id, userId: user.id, role: user.role },
       {
-        importId: bankImport.id,
+        importId: bankImport.importRecord.id,
         templateName: "Bank Template",
         sourceColumns: ["Payee", "Amount"],
         columnMap: {
@@ -120,7 +146,7 @@ describe("import status pipeline", () => {
     await applyMappingTemplate(
       { firmId: firm.id, userId: user.id, role: user.role },
       {
-        importId: glImport.id,
+        importId: glImport.importRecord.id,
         templateName: "GL Template",
         sourceColumns: ["Account", "Signed Amount"],
         columnMap: {
@@ -131,9 +157,34 @@ describe("import status pipeline", () => {
       }
     );
 
+    const contents = new Map<string, string>();
+    contents.set(registerImport.storageKey, "Employee,Net,Tax\nA,100,10\n");
+    contents.set(bankImport.storageKey, "Payee,Amount\nA,100\n");
+    contents.set(glImport.storageKey, "Account,Signed Amount\nPayroll,100\n");
+    mockStorage(contents);
+
+    await normalizeImport(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      registerImport.importRecord.id
+    );
+    await normalizeImport(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      bankImport.importRecord.id
+    );
+    await normalizeImport(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      glImport.importRecord.id
+    );
+
     const refreshed = await prisma.import.findMany({
       where: {
-        id: { in: [registerImport.id, bankImport.id, glImport.id] }
+        id: {
+          in: [
+            registerImport.importRecord.id,
+            bankImport.importRecord.id,
+            glImport.importRecord.id
+          ]
+        }
       }
     });
 

@@ -3,7 +3,11 @@ import type { Route } from "next";
 import { notFound } from "next/navigation";
 import { prisma, type SourceType } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { readImportFile } from "@/lib/import-file";
+import {
+  buildParsedDataset,
+  getNormalizedDataset,
+  NORMALIZATION_VERSION
+} from "@/lib/normalized-datasets";
 import {
   mappingFieldConfigs,
   normalizeColumnName,
@@ -119,17 +123,24 @@ export default async function ExceptionDetailPage({
       return null;
     }
     const template = record.mappingTemplateVersion;
-    const { rows } = await readImportFile(record, {
-      sheetName: template.sheetName ?? null
-    });
-    const headerRowIndex = template.headerRowIndex ?? 0;
-    const headerRow = rows[headerRowIndex] ?? [];
-    const columnIndexByNormalized = new Map<string, number>();
-    headerRow.forEach((column, index) => {
-      const normalized = normalizeColumnName(String(column));
-      if (normalized) {
-        columnIndexByNormalized.set(normalized, index);
-      }
+    const dataset = await getNormalizedDataset(session.firmId, record.id);
+    if (!dataset) {
+      parsedCache.set(importId, null);
+      return null;
+    }
+    if (dataset.mappingTemplateVersionId !== template.id) {
+      parsedCache.set(importId, null);
+      return null;
+    }
+    if (dataset.normalizationVersion !== NORMALIZATION_VERSION) {
+      parsedCache.set(importId, null);
+      return null;
+    }
+
+    const { rows, headerRowIndex, columnIndexByNormalized } = buildParsedDataset({
+      headerRowIndex: dataset.headerRowIndex,
+      headerRow: dataset.headerRow,
+      rows: dataset.rows
     });
     const columnMap = template.columnMap as ColumnMap;
     const mappedColumns = mappingFieldConfigs[record.sourceType].fields

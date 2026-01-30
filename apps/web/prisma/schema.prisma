@@ -244,6 +244,7 @@ model Firm {
   approvals   Approval[]
   packs       Pack[]
   imports     Import[]
+  normalizedDatasets NormalizedDataset[]
   mappingTemplates MappingTemplate[]
   reconciliationRuns ReconciliationRun[]
   exceptions Exception[]
@@ -410,7 +411,7 @@ model Import {
   errorMessage           String?
   mappingTemplateVersionId String?         @db.Uuid
   mappingTemplateVersion   MappingTemplate? @relation(fields: [mappingTemplateVersionId], references: [id])
-  normalizedDatasetId    String?           @db.Uuid
+  normalizedDataset      NormalizedDataset?
   parseSummary           Json?
 
   @@unique([payRunId, sourceType, version])
@@ -443,10 +444,33 @@ model MappingTemplate {
   updatedAt        DateTime              @updatedAt
 
   imports          Import[]
+  normalizedDatasets NormalizedDataset[]
 
   @@unique([firmId, clientId, sourceType, name, version])
   @@index([firmId, clientId, sourceType])
   @@index([createdByUserId])
+}
+
+model NormalizedDataset {
+  id                       String            @id @default(uuid()) @db.Uuid
+  firmId                   String            @db.Uuid
+  firm                     Firm              @relation(fields: [firmId], references: [id])
+  importId                 String            @unique @db.Uuid
+  import                   Import            @relation(fields: [importId], references: [id])
+  sourceType               SourceType
+  mappingTemplateVersionId String?           @db.Uuid
+  mappingTemplateVersion   MappingTemplate?  @relation(fields: [mappingTemplateVersionId], references: [id])
+  normalizationVersion     String
+  headerRowIndex           Int
+  headerRow                Json
+  rowCount                 Int
+  rows                     Json
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+
+  @@index([firmId])
+  @@index([importId])
+  @@index([mappingTemplateVersionId])
 }
 
 model ReconciliationRun {

@@ -8,7 +8,12 @@ import {
 } from "@/lib/prisma";
 import { recordAuditEvent } from "./audit";
 import { ValidationError, NotFoundError } from "./errors";
-import { readImportFile } from "./import-file";
+import {
+  buildParsedDataset,
+  getNormalizedDataset,
+  NORMALIZATION_VERSION,
+  type ParsedDataset
+} from "./normalized-datasets";
 import { isImportErrorStatus } from "./import-status";
 import { startSpan, withRetry } from "./logger";
 import { type ColumnMap, normalizeColumnName } from "./mapping-utils";
@@ -37,11 +42,7 @@ type ActorContext = {
   role: "ADMIN" | "PREPARER" | "REVIEWER";
 };
 
-type ParsedImport = {
-  rows: string[][];
-  headerRowIndex: number;
-  columnIndexByNormalized: Map<string, number>;
-};
+type ParsedImport = ParsedDataset;
 
 type BundleConfig = {
   bundleId: string;
@@ -128,11 +129,8 @@ const buildParsedImport = async (
   template: MappingTemplate,
   context: { firmId: string }
 ): Promise<ParsedImport> => {
-  const { rows } = await withRetry(
-    () =>
-      readImportFile(importRecord, {
-        sheetName: template.sheetName ?? null
-      }),
+  const dataset = await withRetry(
+    () => getNormalizedDataset(context.firmId, importRecord.id),
     {
       event: "RECONCILIATION_IMPORT_READ",
       context: {
@@ -142,25 +140,21 @@ const buildParsedImport = async (
       shouldRetry: (error) => !(error instanceof ValidationError)
     }
   );
-  const headerRowIndex = template.headerRowIndex ?? 0;
-  if (rows.length === 0 || headerRowIndex >= rows.length) {
-    throw new ValidationError("Unable to locate the header row for this import.");
+  if (!dataset) {
+    throw new ValidationError("Normalization is required for this import.");
+  }
+  if (dataset.mappingTemplateVersionId !== template.id) {
+    throw new ValidationError("Normalization is out of date for this import.");
+  }
+  if (dataset.normalizationVersion !== NORMALIZATION_VERSION) {
+    throw new ValidationError("Normalization version is out of date.");
   }
 
-  const headerRow = rows[headerRowIndex] ?? [];
-  const columnIndexByNormalized = new Map<string, number>();
-  headerRow.forEach((column, index) => {
-    const normalized = normalizeColumnName(String(column));
-    if (normalized) {
-      columnIndexByNormalized.set(normalized, index);
-    }
+  return buildParsedDataset({
+    headerRowIndex: dataset.headerRowIndex,
+    headerRow: dataset.headerRow,
+    rows: dataset.rows
   });
-
-  if (columnIndexByNormalized.size === 0) {
-    throw new ValidationError("No columns were detected for this import.");
-  }
-
-  return { rows, headerRowIndex, columnIndexByNormalized };
 };
 
 const resolveColumnIndex = (
@@ -550,8 +544,11 @@ const ensureMappedImport = (
   if (entry.parseStatus === "PARSED" || entry.parseStatus === "MAPPING_REQUIRED") {
     throw new ValidationError(`Mapping required for ${source} import.`);
   }
-  if (entry.parseStatus !== "MAPPED" && entry.parseStatus !== "READY") {
-    throw new ValidationError(`Mapping required for ${source} import.`);
+  if (entry.parseStatus === "MAPPED") {
+    throw new ValidationError(`Normalize ${source} import before reconciliation.`);
+  }
+  if (entry.parseStatus !== "READY") {
+    throw new ValidationError(`Normalize ${source} import before reconciliation.`);
   }
   if (!entry.mappingTemplateVersion) {
     throw new ValidationError(`Mapping required for ${source} import.`);
@@ -646,8 +643,7 @@ export const runReconciliation = async (
       ? ensureMappedImport("STATUTORY", statutoryEntry)
       : statutoryEntry &&
           !isImportErrorStatus(statutoryEntry.parseStatus) &&
-          (statutoryEntry.parseStatus === "MAPPED" ||
-            statutoryEntry.parseStatus === "READY") &&
+          statutoryEntry.parseStatus === "READY" &&
           statutoryEntry.mappingTemplateVersion
         ? (statutoryEntry as ImportWithTemplate & {
             mappingTemplateVersion: MappingTemplate;
@@ -657,8 +653,7 @@ export const runReconciliation = async (
     const pensionScheduleImport =
       pensionScheduleEntry &&
       !isImportErrorStatus(pensionScheduleEntry.parseStatus) &&
-      (pensionScheduleEntry.parseStatus === "MAPPED" ||
-        pensionScheduleEntry.parseStatus === "READY") &&
+      pensionScheduleEntry.parseStatus === "READY" &&
       pensionScheduleEntry.mappingTemplateVersion
         ? (pensionScheduleEntry as ImportWithTemplate & {
             mappingTemplateVersion: MappingTemplate;
@@ -1004,24 +999,37 @@ export const runReconciliation = async (
         REGISTER: {
           importId: registerImport.id,
           version: registerImport.version,
-          templateId: registerImport.mappingTemplateVersionId
+          templateId: registerImport.mappingTemplateVersionId,
+          normalizationVersion:
+            (registerImport.parseSummary as { normalizationVersion?: string } | null)
+              ?.normalizationVersion ?? null
         },
         BANK: {
           importId: bankImport.id,
           version: bankImport.version,
-          templateId: bankImport.mappingTemplateVersionId
+          templateId: bankImport.mappingTemplateVersionId,
+          normalizationVersion:
+            (bankImport.parseSummary as { normalizationVersion?: string } | null)
+              ?.normalizationVersion ?? null
         },
         GL: {
           importId: glImport.id,
           version: glImport.version,
-          templateId: glImport.mappingTemplateVersionId
+          templateId: glImport.mappingTemplateVersionId,
+          normalizationVersion:
+            (glImport.parseSummary as { normalizationVersion?: string } | null)
+              ?.normalizationVersion ?? null
         },
         ...(statutoryImport
           ? {
               STATUTORY: {
                 importId: statutoryImport.id,
                 version: statutoryImport.version,
-                templateId: statutoryImport.mappingTemplateVersionId
+                templateId: statutoryImport.mappingTemplateVersionId,
+                normalizationVersion:
+                  (statutoryImport.parseSummary as {
+                    normalizationVersion?: string;
+                  } | null)?.normalizationVersion ?? null
               }
             }
           : {}),
@@ -1030,7 +1038,11 @@ export const runReconciliation = async (
               PENSION_SCHEDULE: {
                 importId: pensionScheduleImport.id,
                 version: pensionScheduleImport.version,
-                templateId: pensionScheduleImport.mappingTemplateVersionId
+                templateId: pensionScheduleImport.mappingTemplateVersionId,
+                normalizationVersion:
+                  (pensionScheduleImport.parseSummary as {
+                    normalizationVersion?: string;
+                  } | null)?.normalizationVersion ?? null
               }
             }
           : {})

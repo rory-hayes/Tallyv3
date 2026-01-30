@@ -6,6 +6,7 @@ import { applyMappingTemplate } from "@/lib/mapping-templates";
 import { buildStorageKey, createImport } from "@/lib/imports";
 import { sha256FromString } from "@/lib/hash";
 import { runReconciliation } from "@/lib/reconciliation";
+import { normalizeImport } from "@/lib/normalized-datasets";
 import { storageClient } from "@/lib/storage";
 import { NotFoundError, ValidationError } from "@/lib/errors";
 import { createFirmWithUser, resetDb } from "./test-db";
@@ -28,6 +29,15 @@ const mockStorage = (contents: Map<string, string>) => {
     const body = contents.get(key) ?? "";
     return { Body: Buffer.from(body) } as { Body: unknown };
   });
+};
+
+const normalizeImports = async (
+  context: { firmId: string; userId: string; role: "ADMIN" | "PREPARER" | "REVIEWER" },
+  importIds: string[]
+) => {
+  for (const importId of importIds) {
+    await normalizeImport(context, importId);
+  }
 };
 
 describe("reconciliation run", () => {
@@ -205,7 +215,7 @@ describe("reconciliation run", () => {
   };
 
   it("creates reconciliation runs and check results", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun();
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun();
 
     const contents = new Map<string, string>();
     contents.set(
@@ -218,6 +228,10 @@ describe("reconciliation run", () => {
       "Account,Signed\nPayroll,300\nClearing,(300)\nZero,0\n"
     );
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [imports.register.id, imports.bank.id, imports.gl.id]
+    );
 
     const result = await runReconciliation(
       { firmId: firm.id, userId: user.id, role: user.role },
@@ -254,7 +268,7 @@ describe("reconciliation run", () => {
   });
 
   it("supersedes previous runs and exceptions", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun();
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun();
 
     const contents = new Map<string, string>();
     contents.set(
@@ -267,6 +281,10 @@ describe("reconciliation run", () => {
       "Account,Signed\nPayroll,300\nClearing,(300)\nZero,0\n"
     );
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [imports.register.id, imports.bank.id, imports.gl.id]
+    );
 
     await runReconciliation(
       { firmId: firm.id, userId: user.id, role: user.role },
@@ -302,7 +320,7 @@ describe("reconciliation run", () => {
   });
 
   it("supports debit and credit journal columns", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun({
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun({
       glMode: "debitCredit"
     });
 
@@ -314,6 +332,10 @@ describe("reconciliation run", () => {
       "Account,Debit,Credit\nPayroll,300,0\nClearing,0,300\nZero,0,0\n"
     );
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [imports.register.id, imports.bank.id, imports.gl.id]
+    );
 
     const result = await runReconciliation(
       { firmId: firm.id, userId: user.id, role: user.role },
@@ -328,7 +350,7 @@ describe("reconciliation run", () => {
   });
 
   it("creates statutory mismatch exceptions when totals differ", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun();
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun();
 
     const statutoryStorageKey = buildStorageKey(
       firm.id,
@@ -373,6 +395,15 @@ describe("reconciliation run", () => {
     contents.set(storageKeys.gl, "Account,Signed\nPayroll,300\nClearing,(300)\n");
     contents.set(statutoryStorageKey, "Category,Amount\nPAYE,5\n");
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [
+        imports.register.id,
+        imports.bank.id,
+        imports.gl.id,
+        statutoryImport.importRecord.id
+      ]
+    );
 
     await runReconciliation(
       { firmId: firm.id, userId: user.id, role: user.role },
@@ -421,6 +452,10 @@ describe("reconciliation run", () => {
     contents.set(storageKeys.bank, "Payee,Amount\nA,100\nB,200\n");
     contents.set(storageKeys.gl, "Account,Signed\nPayroll,300\nClearing,(300)\n");
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [imports.register.id, imports.bank.id, imports.gl.id]
+    );
 
     await runReconciliation(
       { firmId: firm.id, userId: user.id, role: user.role },
@@ -514,6 +549,15 @@ describe("reconciliation run", () => {
     contents.set(storageKeys.gl, "Account,Signed\nPayroll,300\nClearing,(300)\n");
     contents.set(scheduleStorageKey, "Employee,Total\nA,10\nB,10\n");
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [
+        imports.register.id,
+        imports.bank.id,
+        imports.gl.id,
+        scheduleImport.importRecord.id
+      ]
+    );
 
     await runReconciliation(
       { firmId: firm.id, userId: user.id, role: user.role },
@@ -598,6 +642,10 @@ describe("reconciliation run", () => {
       "Account,Signed\nPayroll Expense,350\nNet Wages,300\nTax Payable,100\nClearing,(750)\n"
     );
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [imports.register.id, imports.bank.id, imports.gl.id]
+    );
 
     await runReconciliation(
       { firmId: firm.id, userId: user.id, role: user.role },
@@ -614,7 +662,7 @@ describe("reconciliation run", () => {
   });
 
   it("flags duplicate and negative bank payments in reconciliation", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun();
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun();
 
     const contents = new Map<string, string>();
     contents.set(storageKeys.register, "Employee,Net,Tax\nA,150,0\n");
@@ -624,6 +672,10 @@ describe("reconciliation run", () => {
     );
     contents.set(storageKeys.gl, "Account,Signed\nPayroll,150\nClearing,(150)\n");
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [imports.register.id, imports.bank.id, imports.gl.id]
+    );
 
     await runReconciliation(
       { firmId: firm.id, userId: user.id, role: user.role },
@@ -640,7 +692,7 @@ describe("reconciliation run", () => {
   });
 
   it("downgrades mismatches when expected variance applies", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun();
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun();
 
     await prisma.expectedVariance.create({
       data: {
@@ -660,6 +712,10 @@ describe("reconciliation run", () => {
     contents.set(storageKeys.bank, "Payee,Amount\nBatch,95\n");
     contents.set(storageKeys.gl, "Account,Signed\nPayroll,100\nClearing,(100)\n");
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [imports.register.id, imports.bank.id, imports.gl.id]
+    );
 
     await runReconciliation(
       { firmId: firm.id, userId: user.id, role: user.role },
@@ -682,7 +738,7 @@ describe("reconciliation run", () => {
   });
 
   it("uses the IE bundle for Irish firms", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun({
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun({
       region: "IE"
     });
 
@@ -697,6 +753,10 @@ describe("reconciliation run", () => {
       "Account,Signed\nPayroll,300\nClearing,(300)\nZero,0\n"
     );
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [imports.register.id, imports.bank.id, imports.gl.id]
+    );
 
     await runReconciliation(
       { firmId: firm.id, userId: user.id, role: user.role },
@@ -711,7 +771,7 @@ describe("reconciliation run", () => {
   });
 
   it("requires statutory imports when configured", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun();
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun();
 
     await prisma.firm.update({
       where: { id: firm.id },
@@ -732,6 +792,10 @@ describe("reconciliation run", () => {
     contents.set(storageKeys.bank, "Payee,Amount\nA,100\nB,200\n");
     contents.set(storageKeys.gl, "Account,Signed\nPayroll,300\nClearing,(300)\n");
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [imports.register.id, imports.bank.id, imports.gl.id]
+    );
 
     await expect(
       runReconciliation(
@@ -803,7 +867,7 @@ describe("reconciliation run", () => {
   });
 
   it("fails when mapped columns are missing from the file", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun();
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun();
 
     const contents = new Map<string, string>();
     contents.set(
@@ -816,6 +880,10 @@ describe("reconciliation run", () => {
       "Account,Signed\nPayroll,300\nClearing,(300)\n"
     );
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [imports.register.id, imports.bank.id, imports.gl.id]
+    );
 
     await expect(
       runReconciliation(
@@ -826,7 +894,7 @@ describe("reconciliation run", () => {
   });
 
   it("requires debit and credit when signed amounts are absent", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun({
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun({
       glMode: "debitCredit"
     });
 
@@ -856,6 +924,10 @@ describe("reconciliation run", () => {
       "Account,Debit,Credit\nPayroll,300,0\nClearing,0,300\n"
     );
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [imports.register.id, imports.bank.id, imports.gl.id]
+    );
 
     await expect(
       runReconciliation(
@@ -866,7 +938,7 @@ describe("reconciliation run", () => {
   });
 
   it("requires mapped columns in the template", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun();
+    const { firm, user, payRun, storageKeys, imports } = await setupPayRun();
 
     const registerTemplate = await prisma.mappingTemplate.findFirst({
       where: { firmId: firm.id, sourceType: "REGISTER" },
@@ -894,6 +966,10 @@ describe("reconciliation run", () => {
       "Account,Signed\nPayroll,300\nClearing,(300)\n"
     );
     mockStorage(contents);
+    await normalizeImports(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      [imports.register.id, imports.bank.id, imports.gl.id]
+    );
 
     await expect(
       runReconciliation(
@@ -904,7 +980,7 @@ describe("reconciliation run", () => {
   });
 
   it("fails when the import file is empty", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun();
+    const { firm, user, storageKeys, imports } = await setupPayRun();
 
     const contents = new Map<string, string>();
     contents.set(storageKeys.register, "");
@@ -916,15 +992,15 @@ describe("reconciliation run", () => {
     mockStorage(contents);
 
     await expect(
-      runReconciliation(
+      normalizeImport(
         { firmId: firm.id, userId: user.id, role: user.role },
-        payRun.id
+        imports.register.id
       )
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
   it("fails when the header row contains no columns", async () => {
-    const { firm, user, payRun, storageKeys } = await setupPayRun();
+    const { firm, user, storageKeys, imports } = await setupPayRun();
 
     const contents = new Map<string, string>();
     contents.set(storageKeys.register, ",,\n1,2,3\n");
@@ -936,9 +1012,9 @@ describe("reconciliation run", () => {
     mockStorage(contents);
 
     await expect(
-      runReconciliation(
+      normalizeImport(
         { firmId: firm.id, userId: user.id, role: user.role },
-        payRun.id
+        imports.register.id
       )
     ).rejects.toBeInstanceOf(ValidationError);
   });
@@ -1012,6 +1088,14 @@ describe("reconciliation run", () => {
           tax1: "Tax"
         }
       }
+    );
+
+    const contents = new Map<string, string>();
+    contents.set(registerStorageKey, "Employee,Net,Tax\nA,100,10\n");
+    mockStorage(contents);
+    await normalizeImport(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      registerImport.importRecord.id
     );
 
     await expect(
@@ -1122,6 +1206,19 @@ describe("reconciliation run", () => {
           signedAmount: "Signed"
         }
       }
+    );
+
+    const contents = new Map<string, string>();
+    contents.set(registerStorageKey, "Employee,Net,Tax\nA,100,10\n");
+    contents.set(glStorageKey, "Account,Signed\nPayroll,100\n");
+    mockStorage(contents);
+    await normalizeImport(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      registerImport.importRecord.id
+    );
+    await normalizeImport(
+      { firmId: firm.id, userId: user.id, role: user.role },
+      glImport.importRecord.id
     );
 
     await expect(

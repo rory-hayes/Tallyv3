@@ -19,6 +19,7 @@ import {
   type ColumnMap,
   validateColumnMap
 } from "./mapping-utils";
+import { queueImportNormalization } from "./normalized-datasets";
 
 type ActorContext = {
   firmId: string;
@@ -298,85 +299,6 @@ const markImportMapped = async (
   });
 };
 
-const maybeTransitionImportsReady = async (
-  context: ActorContext,
-  payRunId: string,
-  requiredSources: SourceType[]
-) => {
-  const imports = await prisma.import.findMany({
-    where: {
-      payRunId,
-      firmId: context.firmId,
-      sourceType: { in: requiredSources },
-      deletedAt: null
-    },
-    orderBy: [{ sourceType: "asc" }, { version: "desc" }]
-  });
-
-  const latestBySource = new Map<SourceType, typeof imports[number]>();
-  for (const entry of imports) {
-    if (!latestBySource.has(entry.sourceType)) {
-      latestBySource.set(entry.sourceType, entry);
-    }
-  }
-
-  const latestImports = requiredSources
-    .map((source) => latestBySource.get(source))
-    .filter(Boolean);
-
-  const importsToReady = latestImports.filter(
-    (entry) => entry && entry.parseStatus === "MAPPED"
-  );
-
-  const allReady = latestImports.every(
-    (entry) =>
-      entry &&
-      entry.mappingTemplateVersionId &&
-      (entry.parseStatus === "MAPPED" || entry.parseStatus === "READY")
-  );
-
-  if (!allReady) {
-    return;
-  }
-
-  for (const entry of importsToReady) {
-    assertImportTransition(entry!.parseStatus, "READY");
-  }
-
-  if (importsToReady.length > 0) {
-    await prisma.import.updateMany({
-      where: {
-        id: { in: importsToReady.map((entry) => entry!.id) }
-      },
-      data: {
-        parseStatus: "READY",
-        errorCode: null,
-        errorMessage: null
-      }
-    });
-  }
-
-  await Promise.all(
-    importsToReady.map((entry) =>
-      recordAuditEvent(
-        {
-          action: "IMPORT_READY",
-          entityType: "IMPORT",
-          entityId: entry!.id,
-          metadata: {
-            sourceType: entry!.sourceType,
-            version: entry!.version
-          }
-        },
-        {
-          firmId: context.firmId,
-          actorUserId: context.userId
-        }
-      )
-    )
-  );
-};
-
 export const applyMappingTemplate = async (
   context: ActorContext,
   input: ApplyTemplateInput
@@ -439,8 +361,8 @@ export const applyMappingTemplate = async (
       });
       await markImportMapped(importRecord);
       await recordMappingSaved(context, importRecord, template);
+      await queueImportNormalization(context, importRecord.id);
       await maybeTransitionToMapped(context, importRecord.payRunId, requiredSources);
-      await maybeTransitionImportsReady(context, importRecord.payRunId, requiredSources);
       return {
         templateId: template.id,
         version: template.version,
@@ -470,9 +392,9 @@ export const applyMappingTemplate = async (
     });
     await markImportMapped(importRecord);
     await recordMappingSaved(context, importRecord, created);
+    await queueImportNormalization(context, importRecord.id);
 
     await maybeTransitionToMapped(context, importRecord.payRunId, requiredSources);
-    await maybeTransitionImportsReady(context, importRecord.payRunId, requiredSources);
     return {
       templateId: created.id,
       version: created.version,
@@ -505,9 +427,9 @@ export const applyMappingTemplate = async (
   });
   await markImportMapped(importRecord);
   await recordMappingSaved(context, importRecord, created);
+  await queueImportNormalization(context, importRecord.id);
 
   await maybeTransitionToMapped(context, importRecord.payRunId, requiredSources);
-  await maybeTransitionImportsReady(context, importRecord.payRunId, requiredSources);
   return {
     templateId: created.id,
     version: created.version,

@@ -2,6 +2,7 @@ import { Prisma, prisma, type Job } from "@tally/db";
 import { generatePack } from "@/lib/packs";
 import { runReconciliation } from "@/lib/reconciliation";
 import { getImportPreview } from "@/lib/import-preview";
+import { normalizeImport } from "@/lib/normalized-datasets";
 import { logError, logInfo } from "@/lib/logger";
 
 type JobPayload = Record<string, unknown>;
@@ -25,6 +26,13 @@ type ImportParsePayload = {
   importId: string;
   actorUserId: string;
   retry?: boolean;
+};
+
+type ImportNormalizePayload = {
+  firmId: string;
+  importId: string;
+  actorUserId: string;
+  actorRole: "ADMIN" | "PREPARER" | "REVIEWER";
 };
 
 const WORKER_ID = process.env.WORKER_ID ?? `worker-${process.pid}`;
@@ -125,6 +133,18 @@ const handleJob = async (job: Job) => {
       await getImportPreview(firmId, importRecord.id, null, data.actorUserId, {
         force: data.retry === true
       });
+      return;
+    }
+    case "IMPORT_NORMALIZE": {
+      const data = payload as ImportNormalizePayload;
+      await normalizeImport(
+        {
+          firmId: data.firmId ?? job.firmId ?? "",
+          userId: data.actorUserId,
+          role: data.actorRole
+        },
+        data.importId
+      );
       return;
     }
     case "PACK_GENERATE": {

@@ -642,7 +642,10 @@ export const generatePack = async (context: ActorContext, payRunId: string) => {
         originalFilename: entry.originalFilename,
         uploadedAt: entry.uploadedAt,
         mappingTemplateVersionId: entry.mappingTemplateVersionId ?? null,
-        mappingTemplateVersion: entry.mappingTemplateVersion?.version ?? null
+        mappingTemplateVersion: entry.mappingTemplateVersion?.version ?? null,
+        normalizationVersion:
+          (entry.parseSummary as { normalizationVersion?: string } | null)
+            ?.normalizationVersion ?? null
       })),
       checks: run.checkResults.map((check) => ({
         checkType: check.checkType,
