@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
-import { PermissionError } from "@/lib/permissions";
-import { runReconciliation } from "@/lib/reconciliation";
-import { NotFoundError, ValidationError } from "@/lib/errors";
+import { PermissionError, requirePermission } from "@/lib/permissions";
+import { enqueueJob } from "@/lib/jobs";
+import { NotFoundError } from "@/lib/errors";
+import { prisma } from "@/lib/prisma";
+import { runJobInline } from "@/lib/job-runner";
 
 const runSchema = z.object({
   payRunId: z.string().uuid()
@@ -14,6 +16,14 @@ const errorResponse = (status: number, message: string) =>
 
 export const POST = async (request: Request) => {
   const { session, user } = await requireUser();
+  try {
+    requirePermission(user.role, "reconciliation:run");
+  } catch (error) {
+    if (error instanceof PermissionError) {
+      return errorResponse(403, "Permission denied.");
+    }
+    throw error;
+  }
   const body = await request.json();
   const parsed = runSchema.safeParse(body);
   if (!parsed.success) {
@@ -21,21 +31,37 @@ export const POST = async (request: Request) => {
   }
 
   try {
-    const result = await runReconciliation(
-      {
+    const payRun = await prisma.payRun.findFirst({
+      where: {
+        id: parsed.data.payRunId,
+        firmId: session.firmId
+      }
+    });
+    if (!payRun) {
+      throw new NotFoundError("Pay run not found.");
+    }
+
+    const job = await enqueueJob({
+      firmId: session.firmId,
+      type: "RECONCILIATION_RUN",
+      payload: {
         firmId: session.firmId,
-        userId: session.userId,
-        role: user.role
+        payRunId: parsed.data.payRunId,
+        actorUserId: session.userId,
+        actorRole: user.role
       },
-      parsed.data.payRunId
-    );
-    return NextResponse.json(result);
+      payRunId: parsed.data.payRunId,
+      maxAttempts: 2
+    });
+
+    if (process.env.JOBS_INLINE === "true") {
+      await runJobInline(job);
+    }
+
+    return NextResponse.json({ jobId: job.id });
   } catch (error) {
     if (error instanceof PermissionError) {
       return errorResponse(403, "Permission denied.");
-    }
-    if (error instanceof ValidationError) {
-      return errorResponse(400, error.message);
     }
     if (error instanceof NotFoundError) {
       return errorResponse(404, error.message);

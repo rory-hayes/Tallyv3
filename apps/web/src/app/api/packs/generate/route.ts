@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
-import { generatePack } from "@/lib/packs";
-import { NotFoundError, ValidationError } from "@/lib/errors";
+import { NotFoundError } from "@/lib/errors";
+import { enqueueJob } from "@/lib/jobs";
+import { prisma } from "@/lib/prisma";
+import { runJobInline } from "@/lib/job-runner";
 
 const generateSchema = z.object({
   payRunId: z.string().uuid()
@@ -20,19 +22,35 @@ export const POST = async (request: Request) => {
   }
 
   try {
-    const pack = await generatePack(
-      {
-        firmId: session.firmId,
-        userId: session.userId,
-        role: user.role
-      },
-      parsed.data.payRunId
-    );
-    return NextResponse.json({ packId: pack.id, packVersion: pack.packVersion });
-  } catch (error) {
-    if (error instanceof ValidationError) {
-      return errorResponse(400, error.message);
+    const payRun = await prisma.payRun.findFirst({
+      where: {
+        id: parsed.data.payRunId,
+        firmId: session.firmId
+      }
+    });
+    if (!payRun) {
+      throw new NotFoundError("Pay run not found.");
     }
+
+    const job = await enqueueJob({
+      firmId: session.firmId,
+      type: "PACK_GENERATE",
+      payload: {
+        firmId: session.firmId,
+        payRunId: parsed.data.payRunId,
+        actorUserId: session.userId,
+        actorRole: user.role
+      },
+      payRunId: parsed.data.payRunId,
+      maxAttempts: 1
+    });
+
+    if (process.env.JOBS_INLINE === "true") {
+      await runJobInline(job);
+    }
+
+    return NextResponse.json({ jobId: job.id });
+  } catch (error) {
     if (error instanceof NotFoundError) {
       return errorResponse(404, error.message);
     }

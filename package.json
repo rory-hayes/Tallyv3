@@ -8,6 +8,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @tally/web test:e2e",
     "db:generate": "pnpm --filter @tally/db generate",
     "db:migrate": "pnpm --filter @tally/db migrate"
   },

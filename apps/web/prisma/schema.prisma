@@ -214,6 +214,20 @@ enum AuditEntityType {
   FIRM
 }
 
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum JobType {
+  IMPORT_PARSE
+  IMPORT_NORMALIZE
+  RECONCILIATION_RUN
+  PACK_GENERATE
+}
+
 model Firm {
   id         String  @id @default(uuid()) @db.Uuid
   name       String
@@ -236,6 +250,7 @@ model Firm {
   accountClassifications AccountClassification[]
   expectedVariances ExpectedVariance[]
   auditEvents AuditEvent[]
+  jobs       Job[]
 }
 
 model User {
@@ -572,4 +587,28 @@ model AuditEvent {
   userAgent   String?
 
   @@index([firmId, timestamp])
+}
+
+model Job {
+  id          String    @id @default(uuid()) @db.Uuid
+  firmId      String?   @db.Uuid
+  firm        Firm?     @relation(fields: [firmId], references: [id])
+  type        JobType
+  status      JobStatus @default(QUEUED)
+  payload     Json
+  runAt       DateTime  @default(now())
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  lockedAt    DateTime?
+  lockedBy    String?
+  lastError   String?
+  payRunId    String?   @db.Uuid
+  importId    String?   @db.Uuid
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, runAt])
+  @@index([firmId])
+  @@index([payRunId])
+  @@index([importId])
 }

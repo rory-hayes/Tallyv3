@@ -19,6 +19,24 @@ export const ReconciliationRunner = ({
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
+  const pollJobStatus = async (jobId: string) => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const response = await fetch(`/api/jobs/${jobId}`);
+      if (!response.ok) {
+        continue;
+      }
+      const data = await response.json();
+      if (data.status === "SUCCEEDED") {
+        return;
+      }
+      if (data.status === "FAILED") {
+        throw new Error(data.lastError || "Reconciliation failed.");
+      }
+    }
+    throw new Error("Reconciliation is still running. Refresh to view status.");
+  };
+
   const handleRun = async () => {
     setRunning(true);
     setError(null);
@@ -34,7 +52,12 @@ export const ReconciliationRunner = ({
       if (!response.ok) {
         throw new Error(data.error || "Unable to run reconciliation.");
       }
-      setStatus(`Reconciliation run ${data.runNumber} completed.`);
+      if (!data.jobId) {
+        throw new Error("Reconciliation job was not queued.");
+      }
+      setStatus("Reconciliation queued.");
+      await pollJobStatus(data.jobId);
+      setStatus("Reconciliation completed.");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to run reconciliation.");

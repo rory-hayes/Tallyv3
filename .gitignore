@@ -10,3 +10,5 @@ pnpm-debug.log
 mcp-credentials.local.md
 .vercel
 .env*.local
+playwright-report
+test-results

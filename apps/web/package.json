@@ -11,6 +11,7 @@
     "lint": "next lint",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "prisma:migrate": "prisma migrate deploy --schema=prisma/schema.prisma"
   },
@@ -29,13 +30,14 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^1.6.0",
+    "@playwright/test": "^1.58.0",
     "@testing-library/react": "^14.3.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.14.9",
     "@types/papaparse": "^5.3.14",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "@vitest/coverage-v8": "^1.6.0",
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.39",
     "prisma": "^5.22.0",

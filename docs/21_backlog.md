@@ -173,5 +173,68 @@ Each story includes acceptance criteria. Stories are grouped by epic.
 
 ---
 
+## Epic X — Remaining Work (Audit Consolidation)
+This epic is the **authoritative list of remaining work** across the PRD, ProductSpec, Roadmap, and `/docs/*`.
+All new build work should be added here first.
+
+### X1 Background jobs + queue (worker real implementation)
+**Acceptance criteria**
+- Worker app runs job handlers for: parse import, normalize import, run reconciliation, generate pack.
+- Jobs are idempotent with retry-safe updates and audited transitions.
+- Web triggers enqueue jobs instead of running heavy tasks inline.
+- Job status and failures are visible in UI (with retry action where appropriate).
+
+### X2 Import pipeline completeness
+**Acceptance criteria**
+- Import status transitions follow: `UPLOADED → PARSING → PARSED → MAPPED → READY` with strict enforcement.
+- Async parsing persists `parseSummary` (rows/columns/sheet metadata).
+- A user can retry parse after `ERROR_PARSE_FAILED`.
+- Import delete/void is supported (tombstone + `IMPORT_DELETED` audit event).
+
+### X3 Normalization storage (deterministic evidence)
+**Acceptance criteria**
+- Normalized datasets are persisted (DB or object storage) per import/version.
+- Evidence pointers resolve without re-reading raw files.
+- Normalization is deterministic and versioned in pack metadata.
+
+### X4 Reconciliation check gaps
+**Acceptance criteria**
+- Implement import sanity checks (rowcount nonzero, duplicate rows) with evidence pointers.
+- Add reasonableness checks (period variance, new pay element detection) as WARN-only.
+- Optional line-level matching (employee net → bank line) with deterministic matching and explainability.
+
+### X5 Bank/payment summary alternative
+**Acceptance criteria**
+- Support a payment summary export as an alternative to bank file.
+- Review gating accepts the configured substitute source.
+- Mapping + reconciliation work correctly for the summary source type.
+
+### X6 Pack fidelity vs spec
+**Acceptance criteria**
+- Pack PDF includes all sections in `docs/11_pack_generation_and_locking.md`.
+- Exceptions section includes outcomes + notes and evidence pointers.
+- Optional evidence bundle ZIP can be generated (if enabled).
+
+### X7 Security, observability, retention
+**Acceptance criteria**
+- Sentry (or equivalent) is wired for web + worker with correlation IDs.
+- Job metrics (durations, failures) are captured.
+- PII scrubbing tests cover logs and audit metadata.
+- Retention/deletion policy implemented for imports and packs (per `docs/14_security_privacy_redaction.md`).
+
+### X8 User lifecycle management
+**Acceptance criteria**
+- Admin can disable users; disabled users cannot sign in.
+- `USER_DISABLED` audit event emitted.
+- UI shows disabled state and blocks actions for disabled users.
+
+### X9 Fixtures + integration coverage
+**Acceptance criteria**
+- Sanitized fixtures added (register/bank/gl/statutory + variants).
+- Integration tests cover upload → parse → map → reconcile → pack using fixtures.
+
+---
+
 ## Open Questions / Proposed Changes
 - Auto-populate mapping wizard selections by matching uploaded column headers to known field aliases (header heuristics), so users start with best-guess mappings.
+- 2026-01-29: Expand E2E coverage beyond critical flows to cover all app functionality with Playwright; this conflicts with `testing.md` (E2E = critical flows only) and needs a scope/time decision.

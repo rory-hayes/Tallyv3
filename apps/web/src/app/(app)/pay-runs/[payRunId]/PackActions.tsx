@@ -25,6 +25,24 @@ export const PackActions = ({ payRunId, status, role, pack }: PackActionsProps) 
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  const pollJobStatus = async (jobId: string) => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const response = await fetch(`/api/jobs/${jobId}`);
+      if (!response.ok) {
+        continue;
+      }
+      const data = await response.json();
+      if (data.status === "SUCCEEDED") {
+        return;
+      }
+      if (data.status === "FAILED") {
+        throw new Error(data.lastError || "Pack generation failed.");
+      }
+    }
+    throw new Error("Pack generation is still running. Refresh to view status.");
+  };
+
   const canGenerate = status === "APPROVED";
   const canLock = status === "PACKED" && (role === "ADMIN" || role === "REVIEWER");
 
@@ -32,7 +50,8 @@ export const PackActions = ({ payRunId, status, role, pack }: PackActionsProps) 
     action: string,
     endpoint: string,
     payload: Record<string, unknown>,
-    successMessage: string
+    successMessage: string,
+    queuedMessage?: string
   ) => {
     setPendingAction(action);
     setError(null);
@@ -47,8 +66,15 @@ export const PackActions = ({ payRunId, status, role, pack }: PackActionsProps) 
       if (!response.ok) {
         throw new Error(data.error || "Unable to update pack.");
       }
-      setStatusMessage(successMessage);
-      router.refresh();
+      if (data.jobId) {
+        setStatusMessage(queuedMessage ?? `${successMessage} Queued.`);
+        await pollJobStatus(data.jobId);
+        setStatusMessage(successMessage);
+        router.refresh();
+      } else {
+        setStatusMessage(successMessage);
+        router.refresh();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update pack.");
     } finally {
@@ -61,7 +87,8 @@ export const PackActions = ({ payRunId, status, role, pack }: PackActionsProps) 
       "generate",
       "/api/packs/generate",
       { payRunId },
-      "Pack generated."
+      "Pack generated.",
+      "Pack generation queued."
     );
   };
 

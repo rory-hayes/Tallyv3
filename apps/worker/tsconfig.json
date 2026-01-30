@@ -3,6 +3,9 @@
   "compilerOptions": {
     "types": ["node"],
     "baseUrl": ".",
+    "paths": {
+      "@/*": ["../web/src/*"]
+    },
     "outDir": "dist"
   },
   "include": ["src"]
