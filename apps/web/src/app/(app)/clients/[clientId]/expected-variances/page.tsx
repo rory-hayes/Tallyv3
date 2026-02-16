@@ -18,6 +18,11 @@ const varianceLabels: Record<ExpectedVarianceType, string> = {
 };
 
 const checkLabels: Record<CheckType, string> = {
+  CHK_IMPORT_ROWCOUNT_NONZERO: "Import row count nonzero",
+  CHK_IMPORT_DUPLICATE_ROWS: "Import duplicate rows",
+  CHK_EMPLOYEE_NET_TO_BANK_LINES: "Employee net to bank lines",
+  CHK_PERIOD_TOTAL_VARIANCE: "Period total variance",
+  CHK_NEW_PAY_ELEMENT_DETECTED: "New pay element detected",
   CHK_REGISTER_NET_TO_BANK_TOTAL: "Register vs Bank totals",
   CHK_JOURNAL_DEBITS_EQUAL_CREDITS: "Journal balance",
   CHK_REGISTER_DEDUCTIONS_TO_STATUTORY_TOTALS: "Register vs Statutory totals",

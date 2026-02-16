@@ -1,8 +1,8 @@
 import "server-only";
 
-import { prisma, type Job, type JobStatus, type JobType } from "@/lib/prisma";
+import { prisma, type Job, type JobStatus, type JobType, type Prisma } from "@/lib/prisma";
 
-export type JobPayload = Record<string, unknown>;
+export type JobPayload = Prisma.InputJsonValue;
 
 export type EnqueueJobInput = {
   firmId: string | null;
